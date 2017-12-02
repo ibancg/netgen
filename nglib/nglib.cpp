@@ -281,7 +281,7 @@ namespace nglib
 
    // Return the surface element at a given index "pi"
    DLL_HEADER Ng_Surface_Element_Type 
-      Ng_GetSurfaceElement (Ng_Mesh * mesh, int num, int * pi)
+      Ng_GetSurfaceElement (Ng_Mesh * mesh, int num, int * pi, int* matnum)
    {
       const Element2d & el = ((Mesh*)mesh)->SurfaceElement(num);
       for (int i = 1; i <= el.GetNP(); i++)
@@ -304,6 +304,10 @@ namespace nglib
       default:
          et = NG_TRIG; break; // for the compiler
       }
+
+      if (matnum)
+         *matnum = el.GetIndex();
+
       return et;
    }
 

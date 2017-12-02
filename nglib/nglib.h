@@ -536,7 +536,7 @@ DLL_HEADER void Ng_GetPoint (Ng_Mesh * mesh, int num, double * x);
 
 // return surface and volume element in pi
 DLL_HEADER Ng_Surface_Element_Type 
-Ng_GetSurfaceElement (Ng_Mesh * mesh, int num, int * pi);
+Ng_GetSurfaceElement (Ng_Mesh * mesh, int num, int * pi, int * matnum = NULL);
 
 DLL_HEADER Ng_Volume_Element_Type
 Ng_GetVolumeElement (Ng_Mesh * mesh, int num, int * pi);
