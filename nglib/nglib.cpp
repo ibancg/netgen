@@ -604,6 +604,8 @@ namespace nglib
    // generate new STL Geometry
    DLL_HEADER Ng_STL_Geometry * Ng_STL_NewGeometry ()
    {
+      readtrias.SetSize(0);
+      readedges.SetSize(0);
       return (Ng_STL_Geometry*)(void*)new STLGeometry;
    } 
 
