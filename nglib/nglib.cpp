@@ -509,6 +509,14 @@ namespace nglib
    }
 
 
+   DLL_HEADER Ng_Geometry_2D * Ng_LoadGeometry_2D_Str (const std::string& str)
+   {
+      SplineGeometry2d * geom = new SplineGeometry2d();
+      geom -> LoadFromString (str);
+      return (Ng_Geometry_2D *)geom;
+   }
+
+
    DLL_HEADER Ng_Result Ng_GenerateMesh_2D (Ng_Geometry_2D * geom,
                                             Ng_Mesh ** mesh,
                                             Ng_Meshing_Parameters * mp)

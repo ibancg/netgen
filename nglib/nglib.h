@@ -572,8 +572,13 @@ Ng_GetElement_2D (Ng_Mesh * mesh, int num, int * pi, int * matnum = NULL);
 DLL_HEADER void Ng_GetSegment_2D (Ng_Mesh * mesh, int num, int * pi, int * matnum = NULL);
 
 
-// load 2d netgen spline geometry
+// load 2d netgen spline geometry from file
 DLL_HEADER Ng_Geometry_2D * Ng_LoadGeometry_2D (const char * filename);
+
+
+// load 2d netgen spline geometry from string
+DLL_HEADER Ng_Geometry_2D * Ng_LoadGeometry_2D_Str (const std::string& str);
+
 
 // generate 2d mesh, mesh is allocated by function
 DLL_HEADER Ng_Result Ng_GenerateMesh_2D (Ng_Geometry_2D * geom,

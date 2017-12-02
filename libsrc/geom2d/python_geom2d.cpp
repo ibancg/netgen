@@ -29,7 +29,7 @@ DLL_HEADER void ExportGeom2d(py::module &m)
              ng_geometry = shared_ptr<SplineGeometry2d>(instance, NOOP_Deleter);
            })
     
-	.def("Load",&SplineGeometry2d::Load)
+          .def("Load",static_cast<void (SplineGeometry2d::*)(const char *)>(&SplineGeometry2d::Load))
     .def("AppendPoint", FunctionPointer
          ([](SplineGeometry2d &self, double px, double py, double maxh, double hpref)
           {

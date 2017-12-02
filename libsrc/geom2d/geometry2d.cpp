@@ -21,13 +21,39 @@ namespace netgen
   }
 
 
+  void SplineGeometry2d :: Load (istream& infile)
+  {
+     char buf[50];
+
+     if ( ! infile.good() )
+       throw NgException(string ("Input not available!"));
+
+     TestComment ( infile );
+
+     infile >> buf;   // file recognition
+
+     tensormeshing.SetSize(0);
+     quadmeshing.SetSize(0);
+
+     TestComment ( infile );
+     if ( strcmp (buf, "splinecurves2dnew") == 0 )
+       {
+     LoadDataNew ( infile );
+       }
+     else if ( strcmp (buf, "splinecurves2dv2") == 0 )
+       {
+     LoadDataV2 ( infile );
+       }
+     else
+       {
+     LoadData(infile );
+       }
+  }
+
+
   void SplineGeometry2d :: Load (const char * filename)
   {
-
     ifstream infile;
-    Point<2> x;
-    char buf[50];
-
 
     infile.open (filename);
   
@@ -36,33 +62,20 @@ namespace netgen
 			string (filename) +
 			string ("' not available!"));
 
-    TestComment ( infile );
-  
-    infile >> buf;   // file recognition
-
-    tensormeshing.SetSize(0);
-    quadmeshing.SetSize(0);
-
-    TestComment ( infile );
-    if ( strcmp (buf, "splinecurves2dnew") == 0 )
-      {
-	LoadDataNew ( infile );
-      }
-    else if ( strcmp (buf, "splinecurves2dv2") == 0 )
-      {
-	LoadDataV2 ( infile );
-      }
-    else
-      {
-	LoadData(infile );
-      }
+    Load(infile);
     infile.close();
   }
 
 
+  void SplineGeometry2d :: LoadFromString (const std::string& str)
+  {
+    stringstream infile(str, stringstream::in);
+    Load(infile);
+  }
+
 
   // herbert: fixed TestComment
-  void SplineGeometry2d :: TestComment ( ifstream & infile )
+  void SplineGeometry2d :: TestComment ( istream & infile )
   {
     bool comment = true;
     char ch;
@@ -90,7 +103,7 @@ namespace netgen
 
 
 
-  void SplineGeometry2d :: LoadData ( ifstream & infile )
+  void SplineGeometry2d :: LoadData ( istream & infile )
   {      
     enum { D = 2 };
 
@@ -239,7 +252,7 @@ namespace netgen
 
 
 
-  void SplineGeometry2d :: LoadDataNew ( ifstream & infile )
+  void SplineGeometry2d :: LoadDataNew ( istream & infile )
   {
     enum { D = 2 };
     int nump, numseg, leftdom, rightdom;
@@ -474,7 +487,7 @@ namespace netgen
 
 
 
-  void SplineGeometry2d :: LoadDataV2 ( ifstream & infile )
+  void SplineGeometry2d :: LoadDataV2 ( istream & infile )
   { 
     enum { D = 2 };
     // new parser by Astrid Sinwel
