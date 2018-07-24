@@ -170,8 +170,14 @@ namespace netgen
 #else
     enum { BASE = 1 };
 #endif  
+
+    ngstd::Archive & DoArchive (ngstd::Archive & ar) { return ar & i; }
   };
 
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, PointIndex & mp)
+  { return mp.DoArchive(archive);   }
+
+  
   inline istream & operator>> (istream & ist, PointIndex & pi)
   {
     int i; ist >> i; pi = PointIndex(i); return ist;
@@ -240,7 +246,14 @@ namespace netgen
     SurfaceElementIndex & operator++ () { ++i; return *this; }
     SurfaceElementIndex & operator-- () { --i; return *this; }
     SurfaceElementIndex & operator+= (int inc) { i+=inc; return *this; }
+
+    ngstd::Archive & DoArchive (ngstd::Archive & ar) { return ar & i; }
   };
+
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, SurfaceElementIndex & mp)
+  { return mp.DoArchive(archive);   }
+
+  
 
   inline istream & operator>> (istream & ist, SurfaceElementIndex & pi)
   {
@@ -324,8 +337,19 @@ namespace netgen
     static MPI_Datatype MyGetMPIType ( );
 #endif
 
+    ngstd::Archive & DoArchive (ngstd::Archive & ar)
+    {
+      ar & x[0] & x[1] & x[2] & layer & singular;
+      ar & (unsigned char&)(type);
+      return ar;
+    }
   };
 
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, MeshPoint & mp)
+  { return mp.DoArchive(archive);   }
+  
+
+  
   inline ostream & operator<<(ostream  & s, const MeshPoint & pt)
   { 
     return (s << Point<3> (pt)); 
@@ -349,7 +373,7 @@ namespace netgen
     PointGeomInfo geominfo[ELEMENT2D_MAXPOINTS];
 
     /// surface nr
-    int index:16;
+    short int index;
     ///
     ELEMENT_TYPE typ;
     /// number of points
@@ -383,13 +407,13 @@ namespace netgen
     Element2d & operator= (const Element2d &) = default;
     Element2d & operator= (Element2d &&) = default;
     ///
-    Element2d (int anp);
+    DLL_HEADER Element2d (int anp);
     ///
     DLL_HEADER Element2d (ELEMENT_TYPE type);
     ///
-    Element2d (int pi1, int pi2, int pi3);
+    DLL_HEADER Element2d (int pi1, int pi2, int pi3);
     ///
-    Element2d (int pi1, int pi2, int pi3, int pi4);
+    DLL_HEADER Element2d (int pi1, int pi2, int pi3, int pi4);
     ///
     ELEMENT_TYPE GetType () const { return typ; }
     /// 
@@ -473,6 +497,22 @@ namespace netgen
     ///
     const PointGeomInfo & GeomInfoPiMod (int i) const { return geominfo[(i-1) % np]; }
 
+    ngstd::Archive & DoArchive (ngstd::Archive & ar)
+    {
+      short _np, _typ;
+      bool _curved, _vis, _deleted;
+      if (ar.Output())
+        { _np = np; _typ = typ; _curved = is_curved;
+          _vis = visible; _deleted = deleted; }
+      ar & _np & _typ & index & _curved & _vis & _deleted;
+      // ar & next; don't need 
+      if (ar.Input())
+        { np = _np; typ = ELEMENT_TYPE(_typ); is_curved = _curved;
+          visible = _vis; deleted = _deleted; }
+      for (size_t i = 0; i < np; i++)
+        ar & pnum[i];
+      return ar;
+    }
 
     void SetIndex (int si) { index = si; }
     ///
@@ -590,6 +630,8 @@ namespace netgen
 #endif
   };
 
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, Element2d & mp)
+  { return mp.DoArchive(archive);   }
 
   ostream & operator<<(ostream  & s, const Element2d & el);
 
@@ -631,7 +673,7 @@ namespace netgen
       bool marked:1;  // marked for refinement
       bool badel:1;   // angles worse then limit
       bool reverse:1; // for refinement a la Bey
-      bool illegal:1; // illegal, will be split or swaped 
+      bool illegal:1; // illegal, will be split or swapped 
       bool illegal_valid:1; // is illegal-flag valid ?
       bool badness_valid:1; // is badness valid ?
       bool refflag:1;     // mark element for refinement
@@ -731,7 +773,20 @@ namespace netgen
     PointIndex & PNumMod (int i) { return pnum[(i-1) % np]; }
     ///
     const PointIndex & PNumMod (int i) const { return pnum[(i-1) % np]; }
-  
+
+    ngstd::Archive & DoArchive (ngstd::Archive & ar)
+    {
+      short _np, _typ;
+      if (ar.Output())
+        { _np = np; _typ = typ; }
+      ar & _np & _typ & index;
+      if (ar.Input())
+        { np = _np; typ = ELEMENT_TYPE(_typ); }
+      for (size_t i = 0; i < np; i++)
+        ar & pnum[i];
+      return ar;
+    }
+
     ///
     void SetIndex (int si) { index = si; }
     ///
@@ -748,7 +803,7 @@ namespace netgen
 
     ///
     void GetBox (const T_POINTS & points, Box3d & box) const;
-    /// Calculates Volume of elemenet
+    /// Calculates Volume of element
     double Volume (const T_POINTS & points) const;
     ///
     DLL_HEADER void Print (ostream & ost) const;
@@ -873,6 +928,9 @@ namespace netgen
     int hp_elnr;
   };
 
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, Element & mp)
+  { return mp.DoArchive(archive);   }
+  
   ostream & operator<<(ostream  & s, const Element & el);
 
 
@@ -991,7 +1049,11 @@ namespace netgen
 #else
     int GetPartition () const { return 0; }
 #endif
+    ngstd::Archive & DoArchive (ngstd::Archive & ar);
   };
+
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, Segment & mp)
+  { return mp.DoArchive(archive);   }
 
   ostream & operator<<(ostream  & s, const Segment & seg);
 
@@ -1079,7 +1141,13 @@ namespace netgen
     SurfaceElementIndex FirstElement() { return firstelement; }
     // friend ostream & operator<<(ostream  & s, const FaceDescriptor & fd);
     friend class Mesh;
+
+    ngstd::Archive & DoArchive (ngstd::Archive & ar);
   };
+
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, FaceDescriptor & mp)
+  { return mp.DoArchive(archive);   }
+  
 
   ostream & operator<< (ostream  & s, const FaceDescriptor & fd);
 
@@ -1162,7 +1230,7 @@ namespace netgen
     int checkoverlappingboundary = 1;
     /// check chart boundary (sometimes too restrictive)
     int checkchartboundary = 1;
-    /// safty factor for curvatures (elemetns per radius)
+    /// safety factor for curvatures (elements per radius)
     double curvaturesafety = 2;
     /// minimal number of segments per edge
     double segmentsperedge = 1;
@@ -1361,17 +1429,17 @@ namespace netgen
   class Identifications
   {
   public:
-    enum ID_TYPE { UNDEFINED = 1, PERIODIC = 2, CLOSESURFACES = 3, CLOSEEDGES = 4};
+    enum ID_TYPE : unsigned char { UNDEFINED = 1, PERIODIC = 2, CLOSESURFACES = 3, CLOSEEDGES = 4};
   
 
   private:
     class Mesh & mesh;
 
     /// identify points (thin layers, periodic b.c.)  
-    INDEX_2_HASHTABLE<int> * identifiedpoints;
+    INDEX_2_HASHTABLE<int> identifiedpoints;
   
     /// the same, with info about the id-nr
-    INDEX_3_HASHTABLE<int> * identifiedpoints_nr;
+    INDEX_3_HASHTABLE<int> identifiedpoints_nr;
 
     /// sorted by identification nr
     TABLE<INDEX_2> idpoints_table;
@@ -1402,23 +1470,23 @@ namespace netgen
     bool Get (PointIndex pi1, PointIndex pi2, int identnr) const;
     bool GetSymmetric (PointIndex pi1, PointIndex pi2, int identnr) const;
 
-    bool HasIdentifiedPoints() const { return identifiedpoints != nullptr; } 
+    // bool HasIdentifiedPoints() const { return identifiedpoints != nullptr; } 
     ///
     INDEX_2_HASHTABLE<int> & GetIdentifiedPoints () 
     { 
-      return *identifiedpoints; 
+      return identifiedpoints; 
     }
 
     bool Used (PointIndex pi1, PointIndex pi2)
     {
-      return identifiedpoints->Used (INDEX_2 (pi1, pi2));
+      return identifiedpoints.Used (INDEX_2 (pi1, pi2));
     }
 
     bool UsedSymmetric (PointIndex pi1, PointIndex pi2)
     {
       return 
-	identifiedpoints->Used (INDEX_2 (pi1, pi2)) ||
-	identifiedpoints->Used (INDEX_2 (pi2, pi1));
+	identifiedpoints.Used (INDEX_2 (pi1, pi2)) ||
+	identifiedpoints.Used (INDEX_2 (pi2, pi1));
     }
 
     ///
@@ -1447,9 +1515,13 @@ namespace netgen
     void SetMaxPointNr (int maxpnum);
 
     DLL_HEADER void Print (ostream & ost) const;
+
+    ngstd::Archive & DoArchive (ngstd::Archive & ar);
   };
 
-
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, Identifications & mp)
+  { return mp.DoArchive(archive);   }
+  
 }
 
 

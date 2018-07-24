@@ -71,7 +71,14 @@ namespace netgen
 
   void Ngx_Mesh :: DoArchive (ngstd::Archive & archive)
   {
-
+    if (archive.Input()) mesh = make_shared<Mesh>();
+    mesh->DoArchive(archive);
+    if (archive.Input())
+      {
+        netgen::mesh = mesh;
+        SetGlobalMesh (mesh);
+      }
+    /*
     if (archive.Output())
       {
         stringstream str;
@@ -86,6 +93,7 @@ namespace netgen
         stringstream str(st);
         LoadMesh (str);
       }
+    */
   }
 
   void Ngx_Mesh :: UpdateTopology ()
@@ -667,6 +675,48 @@ namespace netgen
   }
 
 
+  int Ngx_Mesh :: GetParentElement (int ei) const
+  {
+      ei++;
+      if (mesh->GetDimension() == 3)
+      {
+          if (ei <= mesh->mlparentelement.Size())
+              return mesh->mlparentelement.Get(ei)-1;
+      }
+      else
+      {
+          if (ei <= mesh->mlparentsurfaceelement.Size())
+              return mesh->mlparentsurfaceelement.Get(ei)-1;
+      }
+      return -1;
+  }
+
+
+  int Ngx_Mesh :: GetParentSElement (int ei) const
+  {
+      ei++;
+      if (mesh->GetDimension() == 3)
+      {
+          if (ei <= mesh->mlparentsurfaceelement.Size())
+              return mesh->mlparentsurfaceelement.Get(ei)-1;
+      }
+      else
+      {
+          return -1;
+      }
+      return -1;
+  }
+
+  int Ngx_Mesh :: GetNIdentifications () const
+  {
+    return mesh->GetIdentifications().GetMaxNr();
+  }
+
+  int Ngx_Mesh :: GetIdentificationType(int idnr) const
+  {
+    return mesh->GetIdentifications().GetType(idnr+1);
+  }
+
 
 
 
@@ -987,9 +1037,15 @@ namespace netgen
     return ind-1;
   }
 
+  void Ngx_Mesh :: Curve (int order)
+  {
+    NgLock meshlock (mesh->MajorMutex(), true);
+    mesh->BuildCurvedElements(order);
+  }
   
   void Ngx_Mesh :: Refine (NG_REFINEMENT_TYPE reftype,
-                           void (*task_manager)(function<void(int,int)>))
+                           void (*task_manager)(function<void(int,int)>),
+                           Tracer tracer)
   {
     NgLock meshlock (mesh->MajorMutex(), 1);
     
@@ -1002,11 +1058,14 @@ namespace netgen
     if (reftype == NG_REFINE_HP)
       biopt.refine_hp = 1;
     biopt.task_manager = task_manager;
+    biopt.tracer = tracer;
     
     const Refinement & ref = mesh->GetGeometry()->GetRefinement();
     ref.Bisect (*mesh, biopt);
-    
-    mesh -> UpdateTopology(task_manager);
+
+    (*tracer)("call updatetop", false);
+    mesh -> UpdateTopology(task_manager, tracer);
+    (*tracer)("call updatetop", true);
     mesh -> GetCurvedElements().SetIsHighOrder (false);
   }
 

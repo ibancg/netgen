@@ -87,7 +87,7 @@ namespace netgen
       epgeominfo[1].dist = 0;
     */
 
-    bcname = 0;
+    bcname = nullptr;
   }    
 
   Segment::Segment (const Segment & other)
@@ -105,8 +105,8 @@ namespace netgen
     surfnr2(other.surfnr2),
     epgeominfo(),
     meshdocval(other.meshdocval),
-    hp_elnr(other.hp_elnr),
-    is_curved(other.is_curved)
+    is_curved(other.is_curved),
+    hp_elnr(other.hp_elnr)
   {
     for (int j = 0; j < 3; j++)
       pnums[j] = other.pnums[j];
@@ -146,6 +146,16 @@ namespace netgen
       }
     
     return *this;
+  }
+  
+  ngstd::Archive & Segment :: DoArchive (ngstd::Archive & ar)
+  {
+    return ar & pnums[0] & pnums[1] & pnums[2]
+      & edgenr & singedge_left & singedge_right
+      & si & cd2i & domin & domout & tlosurf
+      & surfnr1 & surfnr2
+      & bcname
+      & epgeominfo[0].edgenr & epgeominfo[1].edgenr;
   }
 
 
@@ -2416,7 +2426,18 @@ namespace netgen
     else
       bcn = &default_bcname;
   }
+  
+  ngstd::Archive & FaceDescriptor :: DoArchive (ngstd::Archive & ar)
+  {
+    return ar & surfnr & domin & domout & tlosurf & bcprop
+      & surfcolour.X() & surfcolour.Y() & surfcolour.Z()
+      & bcname   
+      & domin_singular & domout_singular ;
+      // don't need:  firstelement
+  }
+  
 
+  
   ostream & operator<<(ostream  & s, const FaceDescriptor & fd)
   {
     s << "surfnr = " << fd.SurfNr() 
@@ -2433,36 +2454,68 @@ namespace netgen
 
 
   Identifications :: Identifications (Mesh & amesh)
-    : mesh(amesh)
+    : mesh(amesh), identifiedpoints(100), identifiedpoints_nr(100)
   {
-    identifiedpoints = new INDEX_2_HASHTABLE<int>(100);
-    identifiedpoints_nr = new INDEX_3_HASHTABLE<int>(100);
+    // identifiedpoints = new INDEX_2_HASHTABLE<int>(100);
+    // identifiedpoints_nr = new INDEX_3_HASHTABLE<int>(100);
     maxidentnr = 0;
   }
 
   Identifications :: ~Identifications ()
   {
-    delete identifiedpoints;
-    delete identifiedpoints_nr;
+    ;
+    // delete identifiedpoints;
+    // delete identifiedpoints_nr;
   }
 
   void Identifications :: Delete ()
   {
+    identifiedpoints.DeleteData();
+    identifiedpoints_nr.DeleteData();
+
+    /*
     delete identifiedpoints;
     identifiedpoints = new INDEX_2_HASHTABLE<int>(100);
     delete identifiedpoints_nr;
     identifiedpoints_nr = new INDEX_3_HASHTABLE<int>(100);
+    */
     maxidentnr = 0;
   }
+
+    ngstd::Archive & Identifications :: DoArchive (ngstd::Archive & ar)
+    {
+      ar & maxidentnr;
+      ar & identifiedpoints & identifiedpoints_nr;
+
+      ar & idpoints_table;
+      if (ar.Output())
+        {
+          size_t s = type.Size();
+          ar & s;
+          for (auto & t : type)
+            ar & (unsigned char&)(t);
+        }
+      else
+        {
+          size_t s;
+          ar & s;
+          type.SetSize(s);
+          for (auto & t : type)
+            ar & (unsigned char&)(t);
+        }
+      return ar;
+    }    
+
+  
 
   void Identifications :: Add (PointIndex pi1, PointIndex pi2, int identnr)
   {
     //  (*testout) << "Identification::Add, pi1 = " << pi1 << ", pi2 = " << pi2 << ", identnr = " << identnr << endl;
     INDEX_2 pair (pi1, pi2);
-    identifiedpoints->Set (pair, identnr);
+    identifiedpoints.Set (pair, identnr);
 
     INDEX_3 tripl (pi1, pi2, identnr);
-    identifiedpoints_nr->Set (tripl, 1);
+    identifiedpoints_nr.Set (tripl, 1);
 
     if (identnr > maxidentnr) maxidentnr = identnr;
 
@@ -2476,8 +2529,8 @@ namespace netgen
   int Identifications :: Get (PointIndex pi1, PointIndex pi2) const
   {
     INDEX_2 pair(pi1, pi2);
-    if (identifiedpoints->Used (pair))
-      return identifiedpoints->Get(pair);
+    if (identifiedpoints.Used (pair))
+      return identifiedpoints.Get(pair);
     else
       return 0;
   }
@@ -2485,7 +2538,7 @@ namespace netgen
   bool Identifications :: Get (PointIndex pi1, PointIndex pi2, int nr) const
   {
     INDEX_3 tripl(pi1, pi2, nr);
-    if (identifiedpoints_nr->Used (tripl))
+    if (identifiedpoints_nr.Used (tripl))
       return 1;
     else
       return 0;
@@ -2496,12 +2549,12 @@ namespace netgen
   int Identifications :: GetSymmetric (PointIndex pi1, PointIndex pi2) const
   {
     INDEX_2 pair(pi1, pi2);
-    if (identifiedpoints->Used (pair))
-      return identifiedpoints->Get(pair);
+    if (identifiedpoints.Used (pair))
+      return identifiedpoints.Get(pair);
 
     pair = INDEX_2 (pi2, pi1);
-    if (identifiedpoints->Used (pair))
-      return identifiedpoints->Get(pair);
+    if (identifiedpoints.Used (pair))
+      return identifiedpoints.Get(pair);
 
     return 0;
   }
@@ -2525,12 +2578,12 @@ namespace netgen
       {
         cout << "getmap, identnr = " << identnr << endl;
 
-        for (int i = 1; i <= identifiedpoints_nr->GetNBags(); i++)
-          for (int j = 1; j <= identifiedpoints_nr->GetBagSize(i); j++)
+        for (int i = 1; i <= identifiedpoints_nr.GetNBags(); i++)
+          for (int j = 1; j <= identifiedpoints_nr.GetBagSize(i); j++)
             {
               INDEX_3 i3;
               int dummy;
-              identifiedpoints_nr->GetData (i, j, i3, dummy);
+              identifiedpoints_nr.GetData (i, j, i3, dummy);
 	    
               if (i3.I3() == identnr || !identnr)
                 {
@@ -2550,21 +2603,21 @@ namespace netgen
     identpairs.SetSize(0);
   
     if (identnr == 0)
-      for (int i = 1; i <= identifiedpoints->GetNBags(); i++)
-        for (int j = 1; j <= identifiedpoints->GetBagSize(i); j++)
+      for (int i = 1; i <= identifiedpoints.GetNBags(); i++)
+        for (int j = 1; j <= identifiedpoints.GetBagSize(i); j++)
           {
             INDEX_2 i2;
             int nr;
-            identifiedpoints->GetData (i, j, i2, nr);
+            identifiedpoints.GetData (i, j, i2, nr);
             identpairs.Append (i2);
           }  
     else
-      for (int i = 1; i <= identifiedpoints_nr->GetNBags(); i++)
-        for (int j = 1; j <= identifiedpoints_nr->GetBagSize(i); j++)
+      for (int i = 1; i <= identifiedpoints_nr.GetNBags(); i++)
+        for (int j = 1; j <= identifiedpoints_nr.GetBagSize(i); j++)
           {
             INDEX_3 i3;
             int dummy;
-            identifiedpoints_nr->GetData (i, j, i3 , dummy);
+            identifiedpoints_nr.GetData (i, j, i3 , dummy);
 	  
             if (i3.I3() == identnr)
               identpairs.Append (INDEX_2(i3.I1(), i3.I2()));
@@ -2574,17 +2627,17 @@ namespace netgen
 
   void Identifications :: SetMaxPointNr (int maxpnum)
   {
-    for (int i = 1; i <= identifiedpoints->GetNBags(); i++)
-      for (int j = 1; j <= identifiedpoints->GetBagSize(i); j++)
+    for (int i = 1; i <= identifiedpoints.GetNBags(); i++)
+      for (int j = 1; j <= identifiedpoints.GetBagSize(i); j++)
         {
           INDEX_2 i2;
           int nr;
-          identifiedpoints->GetData (i, j, i2, nr);
+          identifiedpoints.GetData (i, j, i2, nr);
 	
           if (i2.I1() > maxpnum || i2.I2() > maxpnum)
             {
               i2.I1() = i2.I2() = -1;
-              identifiedpoints->SetData (i, j, i2, -1);	    
+              identifiedpoints.SetData (i, j, i2, -1);	    
             }
         }
   }
@@ -2593,8 +2646,8 @@ namespace netgen
   void Identifications :: Print (ostream & ost) const
   {
     ost << "Identifications:" << endl;
-    ost << "pairs: " << endl << *identifiedpoints << endl;
-    ost << "pairs and nr: " << endl << *identifiedpoints_nr << endl;
+    ost << "pairs: " << endl << identifiedpoints << endl;
+    ost << "pairs and nr: " << endl << identifiedpoints_nr << endl;
     ost << "table: " << endl << idpoints_table << endl;
   }
 

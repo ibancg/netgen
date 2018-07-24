@@ -5,7 +5,7 @@
 //
 // project:              doctoral thesis
 //
-// autor:                Dipl.-Ing. Gerstmayr Johannes
+// author:               Dipl.-Ing. Gerstmayr Johannes
 //
 // generated:            20.12.98
 // last change:          20.12.98
@@ -113,7 +113,19 @@ MyStr::MyStr(int i)
     str = shortstr;
   strcpy(str, buffer);
 }
-
+  /*
+MyStr::MyStr(unsigned int i)
+{
+  char buffer[32];
+  sprintf(buffer, "%d", i);
+  length = unsigned(strlen(buffer));
+  if (length > SHORTLEN)
+    str = new char[length + 1];
+  else
+    str = shortstr;
+  strcpy(str, buffer);
+}
+  */
 MyStr::MyStr(void * p)
 {
   char buffer[32];
@@ -126,8 +138,21 @@ MyStr::MyStr(void * p)
   strcpy(str, buffer);
 }
 
-
+  /*
 MyStr::MyStr(long l)
+{
+  char buffer[32];
+  sprintf(buffer, "%ld", l);
+  length = unsigned(strlen(buffer));
+  if (length > SHORTLEN)
+    str = new char[length + 1];
+  else
+    str = shortstr;
+  strcpy(str, buffer);
+}
+  */
+
+MyStr::MyStr(size_t l)
 {
   char buffer[32];
   sprintf(buffer, "%ld", l);

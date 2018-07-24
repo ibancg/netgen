@@ -279,6 +279,12 @@ DLL_HEADER void ExportCSG(py::module &m)
                                        Solid * sol = new Solid (sp);
                                        return make_shared<SPSolid> (sol);
                                      }));
+  m.def ("Ellipsoid", FunctionPointer([](Point<3> m, Vec<3> a, Vec<3> b, Vec<3> c)
+                                     {
+                                       Ellipsoid * ell = new Ellipsoid (m, a, b, c);
+                                       Solid * sol = new Solid (ell);
+                                       return make_shared<SPSolid> (sol);
+                                     }));
   m.def ("Plane", FunctionPointer([](Point<3> p, Vec<3> n)
                                     {
                                       Plane * sp = new Plane (p,n);
@@ -324,6 +330,23 @@ DLL_HEADER void ExportCSG(py::module &m)
                                            Solid * sol = new Solid(extr);
                                            return make_shared<SPSolid> (sol);
                                          }));
+  m.def("EllipticCone", [](const Point<3>& a, const Vec<3>& v, const Vec<3>& w,
+                            double h, double r)
+        {
+          auto ellcone = new EllipticCone(a,v,w,h,r);
+          auto sol = new Solid(ellcone);
+          return make_shared<SPSolid>(sol);
+        }, py::arg("a"), py::arg("vl"), py::arg("vs"), py::arg("h"), py::arg("r"),
+        R"raw_string(
+An elliptic cone, given by the point 'a' at the base of the cone along the main axis,
+the vectors v and w of the long and short axis of the ellipse, respectively,
+the height of the cone, h, and ratio of base long axis length to top long axis length, r
+
+Note: The elliptic cone has to be truncated by planes similar to a cone or an elliptic cylinder.
+When r =1, the truncated elliptic cone becomes an elliptic cylinder.
+When r tends to zero, the truncated elliptic cone tends to a full elliptic cone.
+However, when r = 0, the top part becomes a point(tip) and meshing fails!
+)raw_string");
   
   m.def ("Or", FunctionPointer([](shared_ptr<SPSolid> s1, shared_ptr<SPSolid> s2)
                                  {
@@ -459,7 +482,17 @@ DLL_HEADER void ExportCSG(py::module &m)
             self.AddSplineSurface(surf);
 	  }),
 	  py::arg("SplineSurface"))
-
+    .def("SingularEdge", [] (CSGeometry & self, shared_ptr<SPSolid> s1,shared_ptr<SPSolid> s2, double factor)
+         {
+           auto singedge = new SingularEdge(1, -1, self, s1->GetSolid(), s2->GetSolid(), factor);
+           self.singedges.Append (singedge);
+         })
+    .def("SingularPoint", [] (CSGeometry & self, shared_ptr<SPSolid> s1,shared_ptr<SPSolid> s2,
+                             shared_ptr<SPSolid> s3, double factor)
+         {
+           auto singpoint = new SingularPoint(1, s1->GetSolid(), s2->GetSolid(), s3->GetSolid(), factor);
+           self.singpoints.Append (singpoint);
+         })
     .def("CloseSurfaces", FunctionPointer
          ([] (CSGeometry & self, shared_ptr<SPSolid> s1, shared_ptr<SPSolid> s2, py::list aslices )
           {
@@ -507,7 +540,9 @@ DLL_HEADER void ExportCSG(py::module &m)
             cout << "surface ids2 = " << si2 << endl;
 
             Flags flags;
-            const TopLevelObject * domain = self.GetTopLevelObject(domain_solid->GetSolid());
+            const TopLevelObject * domain = nullptr;
+            if (domain_solid)
+              domain = self.GetTopLevelObject(domain_solid->GetSolid());
               
             self.AddIdentification 
               (new CloseSurfaceIdentification 
@@ -520,7 +555,8 @@ DLL_HEADER void ExportCSG(py::module &m)
          )
     
     .def("PeriodicSurfaces", FunctionPointer
-         ([] (CSGeometry & self, shared_ptr<SPSolid> s1, shared_ptr<SPSolid> s2)
+         ([] (CSGeometry & self, shared_ptr<SPSolid> s1, shared_ptr<SPSolid> s2,
+              Transformation<3> trafo)
           {
             Array<int> si1, si2;
             s1->GetSolid()->GetSurfaceIndices (si1);
@@ -529,9 +565,11 @@ DLL_HEADER void ExportCSG(py::module &m)
             self.AddIdentification 
               (new PeriodicIdentification 
                (self.GetNIdentifications()+1, self, 
-                self.GetSurface (si1[0]), self.GetSurface (si2[0])));
+                self.GetSurface (si1[0]), self.GetSurface (si2[0]),
+                trafo));
           }),
-         py::arg("solid1"), py::arg("solid2")
+         py::arg("solid1"), py::arg("solid2"),
+         py::arg("trafo")=Transformation<3>(Vec<3>(0,0,0))
          )
 
     .def("AddPoint", [] (CSGeometry & self, Point<3> p, int index) -> CSGeometry&
@@ -585,6 +623,68 @@ DLL_HEADER void ExportCSG(py::module &m)
           })
          )
     .def_property_readonly ("ntlo", &CSGeometry::GetNTopLevelObjects)
+    .def("_visualizationData", [](shared_ptr<CSGeometry> csg_geo)
+         {
+           std::vector<float> vertices;
+           std::vector<int> trigs;
+           std::vector<float> normals;
+           std::vector<float> min = {std::numeric_limits<float>::max(),
+                                     std::numeric_limits<float>::max(),
+                                     std::numeric_limits<float>::max()};
+           std::vector<float> max = {std::numeric_limits<float>::lowest(),
+                                     std::numeric_limits<float>::lowest(),
+                                     std::numeric_limits<float>::lowest()};
+           std::vector<string> surfnames;
+           for (int i = 0; i < csg_geo->GetNSurf(); i++)
+             {
+               auto surf = csg_geo->GetSurface(i);
+               surfnames.push_back(surf->GetBCName());
+             }
+           csg_geo->FindIdenticSurfaces(1e-6);
+           csg_geo->CalcTriangleApproximation(0.01,100);
+           auto nto = csg_geo->GetNTopLevelObjects();
+           size_t np = 0;
+           size_t ntrig = 0;
+           for (int i = 0; i < nto; i++){
+             np += csg_geo->GetTriApprox(i)->GetNP();
+             ntrig += csg_geo->GetTriApprox(i)->GetNT();
+           }
+           vertices.reserve(np*3);
+           trigs.reserve(ntrig*4);
+           normals.reserve(np*3);
+           int offset_points = 0;
+           for (int i = 0; i < nto; i++)
+             {
+               auto triapprox = csg_geo->GetTriApprox(i);
+               for (int j = 0; j < triapprox->GetNP(); j++)
+                 for(int k = 0; k < 3; k++) {
+                   float val = triapprox->GetPoint(j)[k];
+                   vertices.push_back(val);
+                   min[k] = min2(min[k], val);
+                   max[k] = max2(max[k],val);
+                   normals.push_back(triapprox->GetNormal(j)[k]);
+                 }
+               for (int j = 0; j < triapprox->GetNT(); j++)
+                 {
+                   for(int k = 0; k < 3; k++)
+                     trigs.push_back(triapprox->GetTriangle(j)[k]+offset_points);
+                   trigs.push_back(triapprox->GetTriangle(j).SurfaceIndex());
+                 }
+               offset_points += triapprox->GetNP();
+             }
+           py::gil_scoped_acquire ac;
+           py::dict res;
+           py::list snames;
+           for(auto name : surfnames)
+             snames.append(py::cast(name));
+           res["vertices"] = MoveToNumpy(vertices);
+           res["triangles"] = MoveToNumpy(trigs);
+           res["normals"] = MoveToNumpy(normals);
+           res["surfnames"] = snames;
+           res["min"] = MoveToNumpy(min);
+           res["max"] = MoveToNumpy(max);
+           return res;
+         }, py::call_guard<py::gil_scoped_release>())
     ;
 
   m.def("GenerateMesh", FunctionPointer
@@ -604,7 +704,7 @@ DLL_HEADER void ExportCSG(py::module &m)
                  cout << "Caught NgException: " << ex.What() << endl;
                }
              return dummy;
-           }))
+           }),py::call_guard<py::gil_scoped_release>())
     ;
 
   m.def("Save", FunctionPointer 
@@ -620,7 +720,7 @@ DLL_HEADER void ExportCSG(py::module &m)
              *outfile << endl << endl << "endmesh" << endl << endl;
              geom.SaveToMeshFile (*outfile);
              delete outfile;
-           }))
+           }),py::call_guard<py::gil_scoped_release>())
     ;
 
 
@@ -631,7 +731,7 @@ DLL_HEADER void ExportCSG(py::module &m)
             ZRefinementOptions opt;
             opt.minref = 5;
             ZRefinement (mesh, &geom, opt);
-          }))
+          }),py::call_guard<py::gil_scoped_release>())
     ;
 }
 

@@ -78,28 +78,31 @@ namespace netgen
   {
     const Surface * s1;
     const Surface * s2;
+    Transformation<3> trafo; // from s1 to s2
+    Transformation<3> inv_trafo; // from s2 to s1
   public:
     PeriodicIdentification (int anr,
 			    const CSGeometry & ageom,
 			    const Surface * as1,
-			    const Surface * as2);
-    virtual ~PeriodicIdentification ();
-    virtual void Print (ostream & ost) const;
-    virtual void GetData (ostream & ost) const;
+			    const Surface * as2,
+                            Transformation<3> atrafo = Vec<3>(0,0,0));
+    virtual ~PeriodicIdentification () override;
+    virtual void Print (ostream & ost) const override;
+    virtual void GetData (ostream & ost) const override;
 
 
     //  virtual void IdentifySpecialPoints (Array<class SpecialPoint> & points);
     virtual int Identifyable (const SpecialPoint & sp1, const SpecialPoint & sp2,
 			      const TABLE<int> & specpoint2solid,
-			      const TABLE<int> & specpoint2surface) const;
+			      const TABLE<int> & specpoint2surface) const override;
 
-    virtual int Identifyable (const Point<3> & p1, const Point<3> & sp2) const;
-    virtual int GetIdentifiedPoint (class Mesh & mesh, int pi1);
-    virtual void IdentifyPoints (class Mesh & mesh);
-    virtual void IdentifyFaces (class Mesh & mesh);
+    virtual int Identifyable (const Point<3> & p1, const Point<3> & sp2) const override;
+    virtual int GetIdentifiedPoint (class Mesh & mesh, int pi1) override;
+    virtual void IdentifyPoints (class Mesh & mesh) override;
+    virtual void IdentifyFaces (class Mesh & mesh) override;
     virtual void BuildSurfaceElements (Array<class Segment> & segs,
 				       class Mesh & mesh,
-				       const Surface * surf);
+				       const Surface * surf) override;
   };
 
 

@@ -296,3 +296,33 @@ template <> NGX_INLINE DLL_HEADER const Ng_Node<2> Ngx_Mesh :: GetNode<2> (int n
   return node;
 }
 
+
+NGX_INLINE DLL_HEADER Ng_Buffer<int[2]> Ngx_Mesh :: GetPeriodicVertices(int idnr) const
+{
+  Array<INDEX_2> apairs;
+  mesh->GetIdentifications().GetPairs (idnr+1, apairs);
+  for(auto& ind : apairs)
+    {
+      ind.I1()--;
+      ind.I2()--;
+    }
+  typedef int ti2[2];
+  return { apairs.Size(), (ti2*)(void*)apairs.Release() };
+}
+
+
+NGX_INLINE void Ngx_Mesh :: GetParentNodes (int ni, int * parents) const
+{
+  ni++;
+  if (ni <= mesh->mlbetweennodes.Size())
+    {
+      parents[0] = mesh->mlbetweennodes.Get(ni).I1()-1;
+      parents[1] = mesh->mlbetweennodes.Get(ni).I2()-1;
+      }
+  else
+    parents[0] = parents[1] = -1;
+}
+
+
+
+inline auto Ngx_Mesh :: GetTimeStamp() const { return mesh->GetTimeStamp(); }

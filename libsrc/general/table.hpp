@@ -84,10 +84,12 @@ public:
   ///
   void AllocateElementsOneBlock (int elemsize);
   
-  int AllocatedElements () const;
-  int UsedElements () const;
+  size_t AllocatedElements () const;
+  size_t UsedElements () const;
 
   void SetElementSizesToMaxSizes ();
+
+  ngstd::Archive & DoArchive (ngstd::Archive & ar, int elemsize);
 };
 
 
@@ -160,6 +162,12 @@ public:
       data[i-BASE].size++;
     }
 
+  inline void ParallelAdd (int i, const T & acont)
+    {
+      auto oldval = AsAtomic (data[i-BASE].size)++;
+      ((T*)data[i-BASE].col)[oldval] = acont;
+    }
+
   /// Inserts element acont into row i. 1-based. Does not test if already used, assumes to have mem
   inline void AddSave1 (int i, const T & acont)
     {
@@ -229,7 +237,20 @@ public:
 
     return FlatArray<T> (data[i-BASE].size, (T*)data[i-BASE].col);
   }
+
+  ngstd::Archive & DoArchive (ngstd::Archive & ar)
+  {
+    return BASE_TABLE::DoArchive(ar, sizeof(T));
+  }
+
 };
+
+  
+template <typename T, int BASE>
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, TABLE<T,BASE> & mp)
+  { return mp.DoArchive(archive);   }
+  
+
 
 
 template <class T, int BASE>

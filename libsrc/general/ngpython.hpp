@@ -1,11 +1,33 @@
 #ifdef NG_PYTHON
 
+// BEGIN EVIL HACK: Patch PyThread_get_key_value inside pybind11 to avoid deadlocks
+// see https://github.com/pybind/pybind11/pull/1211
+#include <Python.h>
+#include <pythread.h>
+namespace pybind11 {
+    inline void * PyThread_get_key_value(int state) {
+        PyThreadState *tstate = (PyThreadState *) ::PyThread_get_key_value(state);
+        if (!tstate) tstate = PyGILState_GetThisThreadState();
+        return tstate;
+    }
+}
+// END EVIL HACK
 #include <pybind11/pybind11.h>
 #include <pybind11/operators.h>
+#include <pybind11/numpy.h>
 namespace py = pybind11;
 #include <iostream>
 #include <sstream>
 
+
+template <typename T>
+py::array MoveToNumpy(std::vector<T>& vec)
+{
+  auto newvec = new std::vector<T>();
+  std::swap(*newvec, vec);
+  auto capsule = py::capsule(newvec, [](void *v) { delete reinterpret_cast<std::vector<T>*>(v); });
+  return py::array(newvec->size(), newvec->data(), capsule);
+}
 
 namespace PYBIND11_NAMESPACE {
 template<typename T>

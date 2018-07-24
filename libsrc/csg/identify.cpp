@@ -120,9 +120,11 @@ PeriodicIdentification ::
 PeriodicIdentification (int anr,
 			const CSGeometry & ageom,
 			const Surface * as1,
-			const Surface * as2)
-  : Identification(anr, ageom)
+			const Surface * as2,
+                        Transformation<3> atrafo)
+  : Identification(anr, ageom), trafo(atrafo)
 {
+  inv_trafo = trafo.CalcInverse();
   s1 = as1;
   s2 = as2;
 }
@@ -198,13 +200,10 @@ Identifyable (const SpecialPoint & sp1, const SpecialPoint & sp2,
 	      const TABLE<int> & specpoint2solid,
 	      const TABLE<int> & specpoint2surface) const
 {
-  int i;
-  double val;
-  
   SpecialPoint hsp1 = sp1;
   SpecialPoint hsp2 = sp2;
 
-  for (i = 1; i <= 1; i++)
+  for (int i = 1; i <= 1; i++)
     {
       //      Swap (hsp1, hsp2);
 
@@ -226,21 +225,30 @@ Identifyable (const SpecialPoint & sp1, const SpecialPoint & sp2,
       n2 /= n2.Length();
       if ( fabs(n2 * hsp2.v) > 1e-3)
 	continue;
-
-
-      Vec<3> v = hsp2.p - hsp1.p;
-      double vl = v.Length();
-      double cl = fabs (v*n1);
       
+      if ((trafo(hsp1.v)-hsp2.v).Length2() > 1e-12)
+        return false;
 
-      double val1 = 1 - cl*cl/(vl*vl);
-      double val2 = (hsp1.v - hsp2.v).Length();
-    
-      if (val1 < 1e-10 && val2 < 1e-6)
-        return 1;
+      double d2typ = Dist2(hsp1.p, hsp2.p);
+      
+      if (Dist2 (trafo(hsp1.p),hsp2.p) < 1e-18*d2typ)
+        return true;
+      
+      if (Dist2 (hsp1.p, trafo(hsp1.p)) < 1e-18*d2typ)
+        { // old style without trafo, but normal projection
+          Vec<3> v = hsp2.p - hsp1.p;
+          double vl = v.Length();
+          double cl = fabs (v*n1);
+          
+          double val1 = 1 - cl*cl/(vl*vl);
+          double val2 = (hsp1.v - hsp2.v).Length();
+          
+          if (val1 < 1e-10 && val2 < 1e-6)
+            return true;
+        }
     }
 
-  return 0;
+  return false;
 }
 
 int PeriodicIdentification :: 
@@ -259,25 +267,26 @@ GetIdentifiedPoint (class Mesh & mesh,  int pi)
   const Surface *snew;
   const Point<3> & p = mesh.Point (pi);
 
+  Point<3> hp = p;
   if (s1->PointOnSurface (p))
     {
       snew = s2;
+      hp = trafo(hp);
     }
   else
     {
       if (s2->PointOnSurface (p))
 	{
 	  snew = s1;
+          hp = inv_trafo(hp);
 	}
       else
 	{
-	  cerr << "GetIdenfifiedPoint: Not possible" << endl;
-	  exit (1);
+          throw NgException("GetIdenfifiedPoint: Not possible");
 	}    
     }
   
   // project to other surface
-  Point<3> hp = p;
   snew->Project (hp);
 
   int newpi = 0;
@@ -309,15 +318,15 @@ GetIdentifiedPoint (class Mesh & mesh,  int pi)
 
 void PeriodicIdentification :: IdentifyPoints (class Mesh & mesh)
 {
-  int i, j;
-  for (i = 1; i <= mesh.GetNP(); i++)
+  for (int i = 1; i <= mesh.GetNP(); i++)
     {
       Point<3> p = mesh.Point(i);
       if (s1->PointOnSurface (p))
 	{
 	  Point<3> pp = p;
+          pp = trafo(pp);
 	  s2->Project (pp);
-	  for (j = 1; j <= mesh.GetNP(); j++)
+	  for (int j = 1; j <= mesh.GetNP(); j++)
 	    if (Dist2(mesh.Point(j), pp) < 1e-6)
 	      {
 		mesh.GetIdentifications().Add (i, j, nr);
@@ -1258,9 +1267,9 @@ BuildSurfaceElements (Array<Segment> & segs,
 		Vec<3> ns = surf->GetNormalVector (mesh[s1[0]]);
 
                 Vec<3> t1 = mesh[s1[1]] - mesh[s1[0]];
-                Vec<3> t2 = mesh[s2[1]] - mesh[s2[0]];
+                // Vec<3> t2 = mesh[s2[1]] - mesh[s2[0]];
                 Vec<3> nst1 = Cross(t1, ns);
-                Vec<3> nst2 = Cross(t2, ns);
+                // Vec<3> nst2 = Cross(t2, ns);
                 Vec<3> dvec = Center(mesh[s1[0]], mesh[s1[1]])-Center(mesh[s2[0]], mesh[s2[1]]);
                 if (nst1 * dvec < 0) continue;
                 

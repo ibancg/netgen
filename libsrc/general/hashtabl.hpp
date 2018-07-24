@@ -81,6 +81,8 @@ protected:
   
 public:
   ///
+  BASE_INDEX_2_HASHTABLE () { ; } 
+
   BASE_INDEX_2_HASHTABLE (int size)
     : hash (size) { };
 
@@ -113,6 +115,8 @@ class INDEX_2_HASHTABLE : public BASE_INDEX_2_HASHTABLE
   
 public:
   ///
+  INDEX_2_HASHTABLE () { ; } 
+
  INDEX_2_HASHTABLE (int size)
    : BASE_INDEX_2_HASHTABLE (size), cont(size)
   { ; }  
@@ -254,7 +258,18 @@ public:
 
   const T & GetData (const Iterator & it) const
   { return cont[it.BagNr()][it.Pos()]; }
+
+  ngstd::Archive & DoArchive (ngstd::Archive & ar)
+  {
+    ar & hash & cont;
+    return ar;
+  }    
+  
 };
+
+  template <typename T>
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, INDEX_2_HASHTABLE<T> & mp)
+  { return mp.DoArchive(archive);   }
 
 
 
@@ -285,6 +300,7 @@ protected:
 
 public:
   ///
+  BASE_INDEX_3_HASHTABLE () { ; } 
   BASE_INDEX_3_HASHTABLE (int size)
     : hash (size) { };
 
@@ -322,6 +338,7 @@ class INDEX_3_HASHTABLE : private BASE_INDEX_3_HASHTABLE
 
 public:
   ///
+  inline INDEX_3_HASHTABLE () { ; }
   inline INDEX_3_HASHTABLE (int size);
   ///
   inline void Set (const INDEX_3 & ahash, const T & acont);
@@ -419,10 +436,20 @@ public:
   { return cont[it.BagNr()][it.Pos()]; }
 
 
+  ngstd::Archive & DoArchive (ngstd::Archive & ar)
+  {
+    ar & hash & cont;
+    return ar;
+  }    
+
 
 };
 
 
+
+  template <typename T>
+  inline ngstd::Archive & operator & (ngstd::Archive & archive, INDEX_3_HASHTABLE<T> & mp)
+  { return mp.DoArchive(archive);   }
 
 
 
@@ -515,7 +542,7 @@ public:
 
 
 
-  // returns 1, if new postion is created
+  // returns 1, if new position is created
   int PositionCreate (const INDEX & ind, int & apos)
   {
     int i = HashValue (ind);
@@ -677,7 +704,7 @@ public:
       }
   }
 
-  // returns 1, if new postion is created
+  // returns 1, if new position is created
   bool PositionCreate0 (const INDEX_2 & ind, int & apos)
   {
     int i = HashValue (ind);
@@ -875,7 +902,7 @@ public:
 
 
   
-  // returns true, if new postion is created
+  // returns true, if new position is created
   bool PositionCreate (const INDEX_3 & ind, int & apos)
   {
     int i = HashValue (ind);
@@ -1344,7 +1371,7 @@ PrintMemInfo (ostream & ost) const
 
 inline void SetInvalid (INDEX & i) { i = -1; }
 inline bool IsInvalid (INDEX i) { return i == -1; }
-inline size_t HashValue (INDEX i, size_t size) { return size_t(i) % size; }
+inline size_t HashValue (INDEX i, size_t size) { return (113*size_t(i)) % size; }
 
 inline void SetInvalid (INDEX_2 & i2) { i2[0] = -1; }
 inline bool IsInvalid (INDEX_2 i2) { return i2[0] == -1; }

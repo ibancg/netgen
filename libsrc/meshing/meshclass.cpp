@@ -8,7 +8,7 @@ namespace netgen
   static mutex buildsearchtree_mutex;
 
   Mesh :: Mesh ()
-    : surfarea(*this), topology(*this)
+    : topology(*this), surfarea(*this)
   {
     // volelements.SetName ("vol elements");
     // surfelements.SetName ("surf elements");
@@ -402,6 +402,19 @@ namespace netgen
     return ve;
   }
 
+  void Mesh :: SetVolumeElement (ElementIndex ei, const Element & el)
+  {
+    /*
+    int maxn = el[0];
+    for (int i = 1; i < el.GetNP(); i++)
+      if (el[i] > maxn) maxn = el[i];
+
+    maxn += 1-PointIndex::BASE;
+    */
+
+    volelements[ei]  = el;
+    volelements.Last().flags.illegal_valid = 0;
+  }
 
 
 
@@ -1290,7 +1303,48 @@ namespace netgen
   }
 
 
+  void Mesh :: DoArchive (ngstd::Archive & archive)
+  {
+    archive & dimension;
+    archive & points;
+    archive & surfelements;
+    archive & volelements;
+    archive & segments;
+    archive & facedecoding;
+    archive & materials & bcnames & cd2names;
 
+    archive & *ident;
+
+
+    // archive geometry
+    if (archive.Output())
+      {
+        ostringstream ost;
+        if (geometry)
+          geometry -> SaveToMeshFile (ost);
+        archive << ost.str();
+      }
+    else
+      {
+        string str;
+        archive & str;
+        istringstream ist(str);
+        geometry = geometryregister.LoadFromMeshFile (ist);        
+      }
+    
+    if (archive.Input())
+      {
+        RebuildSurfaceElementLists();
+        
+        CalcSurfacesOfNode ();
+        if (ntasks == 1) // sequential run only
+          {
+            topology.Update();
+            clusters -> Update();
+          }
+        SetNextMajorTimeStamp();
+      }
+  }
 
 
   void Mesh :: Merge (const string & filename, const int surfindex_offset)
@@ -1598,7 +1652,7 @@ namespace netgen
               }
           }
         else 
-          cerr << "illegal elemenet for buildboundaryedges" << endl;
+          cerr << "illegal element for buildboundaryedges" << endl;
       }
 
 
@@ -3270,7 +3324,7 @@ namespace netgen
 
 
     /*
-    // compress points doesnt work for identified points !
+    // compress points doesn't work for identified points !
     if (identifiedpoints)
     {
     for (i = 1; i <= identifiedpoints->GetNBags(); i++)
@@ -5589,7 +5643,7 @@ namespace netgen
   {
     int i, j, nv;
     int ne = GetNE();
-    int nse = GetNSE();
+    // int nse = GetNSE();
 
     numvertices = 0;
     for (i = 1; i <= ne; i++)
@@ -5768,10 +5822,13 @@ namespace netgen
     return 1;
   }
 
-  void Mesh :: UpdateTopology (TaskManager tm)
+  void Mesh :: UpdateTopology (TaskManager tm,
+                               Tracer tracer)
   {
-    topology.Update(tm);
-    clusters->Update(tm);
+    topology.Update(tm, tracer);
+    (*tracer)("call update clusters", false);
+    clusters->Update(tm, tracer);
+    (*tracer)("call update clusters", true);
 #ifdef PARALLEL
     if (paralleltop)
       {
@@ -5784,6 +5841,23 @@ namespace netgen
   void Mesh :: BuildCurvedElements  (const Refinement * ref, int aorder, bool arational)
   {
     GetCurvedElements().BuildCurvedElements (ref, aorder, arational);
+
+    for (SegmentIndex seg = 0; seg < GetNSeg(); seg++)
+      (*this)[seg].SetCurved (GetCurvedElements().IsSegmentCurved (seg));
+    for (SurfaceElementIndex sei = 0; sei < GetNSE(); sei++)
+      (*this)[sei].SetCurved (GetCurvedElements().IsSurfaceElementCurved (sei));
+    for (ElementIndex ei = 0; ei < GetNE(); ei++)
+      (*this)[ei].SetCurved (GetCurvedElements().IsElementCurved (ei));
+    
+    SetNextMajorTimeStamp();
+  }
+
+  void Mesh :: BuildCurvedElements (int aorder)
+  {
+    if (!GetGeometry())
+      throw NgException ("don't have a geometry for mesh curving");
+    
+    GetCurvedElements().BuildCurvedElements (&GetGeometry()->GetRefinement(), aorder, false);
 
     for (SegmentIndex seg = 0; seg < GetNSeg(); seg++)
       (*this)[seg].SetCurved (GetCurvedElements().IsSegmentCurved (seg));
@@ -5894,6 +5968,7 @@ namespace netgen
   }
 
   string Mesh :: cd2_default_name = "default";
+  string Mesh :: default_bc = "default";
   const string & Mesh :: GetCD2Name (int cd2nr) const
   {
     static string defaultstring  = "default";

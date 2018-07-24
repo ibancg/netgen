@@ -39,20 +39,6 @@ namespace netgen
   { return MPI_DOUBLE; }
 
   
-  template <int S, typename T> class Vec;
-  template <> 
-  inline MPI_Datatype MyGetMPIType<Vec<3, double> > ()
-  {
-    static MPI_Datatype MPI_T = 0;
-    if (!MPI_T)
-      {
-	MPI_Type_contiguous ( 3, MPI_DOUBLE, &MPI_T);
-	MPI_Type_commit ( &MPI_T );
-      }
-    return MPI_T;
-  };
-
-
   inline void MyMPI_Send (int i, int dest, int tag)
   {
     int hi = i;
@@ -182,7 +168,7 @@ namespace netgen
 
 
   /*
-    send a table entry to each of the prcesses in the group ...
+    send a table entry to each of the processes in the group ...
     receive-table entries will be set
    */
 

@@ -30,6 +30,21 @@ namespace netgen
     int nr;    // 0-based
   };
 
+  template <typename T>
+  class Ng_Buffer
+  {
+    size_t s;
+    T * data;
+  public:
+    Ng_Buffer (size_t as, T * adata)
+      : s(as), data(adata) { ; }
+    Ng_Buffer (Ng_Buffer && buffer)
+      : s(buffer.Size()), data(buffer.Release()) { ; }
+    ~Ng_Buffer () { delete [] data; }
+    size_t Size() const { return s; }
+    T * Release() { T * hd = data; data = nullptr; return hd; }
+  };
+  
   class Ng_Element
   {
 
@@ -199,6 +214,7 @@ namespace netgen
 
   inline void DummyTaskManager2 (function<void(int,int)> func)
   { func(0,1); }
+  inline void DummyTracer2 (string, bool) { ; } 
   
   class DLL_HEADER Ngx_Mesh
   {
@@ -275,9 +291,18 @@ namespace netgen
     // 3D only
     // std::pair<int,int> GetBoundaryNeighbouringDomains (int bnr);
 
+    void Curve (int order);
     void Refine (NG_REFINEMENT_TYPE reftype,
-                 void (*taskmanager)(function<void(int,int)>) = &DummyTaskManager2);
+                 void (*taskmanager)(function<void(int,int)>) = &DummyTaskManager2,
+                 void (*tracer)(string, bool) = &DummyTracer2);
 
+    void GetParentNodes (int ni, int * parents) const;
+    int GetParentElement (int ei) const;
+    int GetParentSElement (int ei) const;
+
+    int GetNIdentifications() const;
+    int GetIdentificationType(int idnr) const;
+    Ng_Buffer<int[2]> GetPeriodicVertices(int idnr) const;
 
     // Find element of point, returns local coordinates
     template <int DIM>
@@ -293,6 +318,7 @@ namespace netgen
 
     shared_ptr<Mesh> GetMesh () const { return mesh; } 
     shared_ptr<Mesh> SelectMesh () const;
+    inline auto GetTimeStamp() const;
   };
 
 

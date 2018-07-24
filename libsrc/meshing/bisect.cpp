@@ -144,9 +144,9 @@ namespace netgen
   class MarkedIdentification
   {
   public:
-    // number of points of one face (3 or 4)
+    // number of points of one face (3 or 4) - or edge (in 2d)
     int np;
-    /// 6 or 8 point numbers
+    /// 6 or 8 point numbers - or 4 in 2d
     PointIndex pnums[8];
     /// marked for refinement
     int marked;
@@ -1403,6 +1403,16 @@ namespace netgen
       }
     newid1.np = newid2.np = oldid.np;
 
+    if(oldid.np == 2)
+      {
+        newid1.pnums[1] = newp[0];
+        newid2.pnums[0] = newp[0];
+        newid1.pnums[3] = newp[1];
+        newid2.pnums[2] = newp[1];
+        newid1.markededge = 0;
+        newid2.markededge = 0;
+      }
+
     if(oldid.np == 3)
       {
 	newid1.pnums[(oldid.markededge+1)%3] = newp[0];
@@ -2129,12 +2139,42 @@ namespace netgen
 		BTDefineMarkedQuad (el, edgenumber, mq);
 		mquads.Append (mq);
 	      }
-	    
-	    MarkedIdentification mi;
-	    for(int j=0; j<idmaps.Size(); j++)
-	      if(BTDefineMarkedId(el, edgenumber, *idmaps[j], mi))
-		mids.Append(mi);
+
+            if(mesh.GetDimension() == 3)
+              {
+                MarkedIdentification mi;
+                for(int j=0; j<idmaps.Size(); j++)
+                  if(BTDefineMarkedId(el, edgenumber, *idmaps[j], mi))
+                    mids.Append(mi);
+              }
 	  }
+        if(mesh.GetDimension() == 2)
+          {
+            for (SegmentIndex j=1; j<=mesh.GetNSeg(); j++)
+              {
+                auto seg = mesh[j];
+                for (auto map : idmaps)
+                  {
+                    if (seg[0] > 0 && seg[1] > 0 && (*map)[seg[0]] && (*map)[seg[1]])
+                      {
+                        MarkedIdentification mi;
+                        mi.np = 2;
+                        mi.pnums[0] = seg[0];
+                        mi.pnums[1] = seg[1];
+                        mi.pnums[2] = (*map)[seg[0]];
+                        mi.pnums[3] = (*map)[seg[1]];
+                        auto min1 = mi.pnums[0] < mi.pnums[1] ? mi.pnums[0] : mi.pnums[1];
+                        auto min2 = mi.pnums[2] < mi.pnums[3] ? mi.pnums[2] : mi.pnums[3];
+                        if (min1 > min2)
+                          continue;
+                        mi.marked = 0;
+                        mi.markededge = 0;
+                        mi.incorder = 0;
+                        mids.Append(mi);
+                      }
+                  }
+              }
+          }
       }
 	
 
@@ -2659,7 +2699,7 @@ namespace netgen
     static int timer2 = NgProfiler::CreateTimer ("Bisect 2");
     static int timer2a = NgProfiler::CreateTimer ("Bisect 2a");
     static int timer2b = NgProfiler::CreateTimer ("Bisect 2b");
-    static int timer2c = NgProfiler::CreateTimer ("Bisect 2c");
+    // static int timer2c = NgProfiler::CreateTimer ("Bisect 2c");
     static int timer3 = NgProfiler::CreateTimer ("Bisect 3");
     static int timer3a = NgProfiler::CreateTimer ("Bisect 3a");
     static int timer3b = NgProfiler::CreateTimer ("Bisect 3b");
@@ -2667,6 +2707,8 @@ namespace netgen
     static int timer_bisecttrig = NgProfiler::CreateTimer ("Bisect trigs");
     static int timer_bisectsegms = NgProfiler::CreateTimer ("Bisect segms");
     NgProfiler::RegionTimer reg1 (timer);
+
+    (*opt.tracer)("Bisect", false);
     
     NgProfiler::StartTimer (timer1);
     NgProfiler::StartTimer (timer1a);
@@ -3218,6 +3260,7 @@ namespace netgen
 	  {
 	    // refine volume elements
             NgProfiler::StartTimer (timer_bisecttet);
+            (*opt.tracer)("bisecttet", false);
 	    int nel = mtets.Size();
 	    for (int i = 1; i <= nel; i++)
 	      if (mtets.Elem(i).marked)
@@ -3250,6 +3293,7 @@ namespace netgen
 		  mesh.mlparentelement.Append (i);
 		}
             NgProfiler::StopTimer (timer_bisecttet);
+            (*opt.tracer)("bisecttet", true);            
 	    int npr = mprisms.Size();
 	    for (int i = 1; i <= npr; i++)
 	      if (mprisms.Elem(i).marked)
@@ -3342,13 +3386,15 @@ namespace netgen
 
 	    
 	    //IdentifyCutEdges(mesh, cutedges);
-
+            
+            (*opt.tracer)("mark elements", false);
 
 	    hangingvol = 
 	      MarkHangingTets (mtets, cutedges, opt.task_manager) +
 	      MarkHangingPrisms (mprisms, cutedges) +
 	      MarkHangingIdentifications (mids, cutedges);
 
+            (*opt.tracer)("mark elements", true);
 
 	    size_t nsel = mtris.Size();
             NgProfiler::StartTimer (timer_bisecttrig);
@@ -3493,7 +3539,7 @@ namespace netgen
 	      MarkHangingTris (mtris, cutedges, opt.task_manager) +
 	      MarkHangingQuads (mquads, cutedges);
 
-	    hangingedge = 0;
+	    hangingedge = mesh.GetDimension() == 3 ? 0 : MarkHangingIdentifications(mids, cutedges);
             NgProfiler::StopTimer (timer1b);                        
             NgProfiler::StartTimer (timer_bisectsegms);            	  
 	    int nseg = mesh.GetNSeg ();
@@ -3618,9 +3664,11 @@ namespace netgen
     mtris.SetAllocSize (mtris.Size());
     mquads.SetAllocSize (mquads.Size());
   
-    
+    (*opt.tracer)("copy tets", false);
     mesh.ClearVolumeElements();
     mesh.VolumeElements().SetAllocSize (mtets.Size()+mprisms.Size());
+    mesh.VolumeElements().SetSize(mtets.Size());
+    /*
     for (int i = 1; i <= mtets.Size(); i++)
       {
 	Element el(TET);
@@ -3630,6 +3678,24 @@ namespace netgen
 	el.SetOrder (mtets.Get(i).order);
 	mesh.AddVolumeElement (el);
       }
+    */
+    ParallelForRange
+      (opt.task_manager, mtets.Size(), [&] (size_t begin, size_t end)
+       {
+         for (size_t i = begin; i < end; i++)
+          {
+            Element el(TET);
+            auto & tet = mtets[i];
+            el.SetIndex (tet.matindex);
+            el.SetOrder (tet.order);
+            for (int j = 0; j < 4; j++)
+              el[j] = tet.pnums[j];
+            mesh.SetVolumeElement (ElementIndex(i), el);
+          }
+       });
+
+    (*opt.tracer)("copy tets", true);
+    
     for (int i = 1; i <= mprisms.Size(); i++)
       {
 	Element el(PRISM);
@@ -3841,7 +3907,10 @@ namespace netgen
 
 
     mesh.ComputeNVertices();
+
+    (*opt.tracer)("call RebuildSurfElList", false);
     mesh.RebuildSurfaceElementLists();
+    (*opt.tracer)("call RebuildSurfElList", true);
   
     
     // update identification tables
@@ -3886,7 +3955,8 @@ namespace netgen
 		}
 	    }
       }
-
+    
+    (*opt.tracer)("Bisect", true);
 
     // Repair works only for tets!
     bool do_repair = mesh.PureTetMesh ();
@@ -4020,8 +4090,10 @@ namespace netgen
     NgProfiler::StopTimer (timer2);
     NgProfiler::StartTimer (timer3);
 
-    NgProfiler::StartTimer (timer3a);    
-    mesh.UpdateTopology(opt.task_manager);
+    NgProfiler::StartTimer (timer3a);
+    (*opt.tracer)("topology from bisect", false);
+    mesh.UpdateTopology(opt.task_manager, opt.tracer);
+    (*opt.tracer)("topology from bisect", true);
     NgProfiler::StopTimer (timer3a);    
 
 

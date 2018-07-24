@@ -5,7 +5,7 @@
 //
 // project:              doctoral thesis, program smart
 //
-// autor:                Dipl.-Ing. Gerstmayr Johannes
+// author:               Dipl.-Ing. Gerstmayr Johannes
 //
 // generated:            20.12.98
 // last change:          20.12.98
@@ -50,8 +50,10 @@ public:
   MyStr(char);
   MyStr(const MyStr &);
   MyStr(int);
+  MyStr(size_t);
   MyStr(void *);
-  MyStr(long);
+  // MyStr(long);
+  // MyStr(unsigned long);
   MyStr(double);
   MyStr(const Point3d& p);
   MyStr(const Vec3d& p);

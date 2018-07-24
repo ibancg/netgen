@@ -30,16 +30,16 @@ namespace netgen
   BASE_TABLE :: BASE_TABLE (const FlatArray<int> & entrysizes, int elemsize)
     : data(entrysizes.Size())
   {
-    int i, cnt = 0;
-    int n = entrysizes.Size();
+    size_t cnt = 0;
+    size_t n = entrysizes.Size();
 
-    for (i = 0; i < n; i++)
+    for (size_t i = 0; i < n; i++)
       cnt += entrysizes[i];
     oneblock = new char[elemsize * cnt];
     // mem_total_alloc_table += elemsize * cnt;
 
     cnt = 0;
-    for (i = 0; i < n; i++)
+    for (size_t i = 0; i < n; i++)
       {
 	data[i].maxsize = entrysizes[i];
 	data[i].size = 0;
@@ -171,15 +171,15 @@ namespace netgen
 
   void BASE_TABLE :: AllocateElementsOneBlock (int elemsize)
   {
-    int cnt = 0;
-    int n = data.Size();
+    size_t cnt = 0;
+    size_t n = data.Size();
 
-    for (int i = 0; i < n; i++)
+    for (size_t i = 0; i < n; i++)
       cnt += data[i].maxsize;
     oneblock = new char[elemsize * cnt];
 
     cnt = 0;
-    for (int i = 0; i < n; i++)
+    for (size_t i = 0; i < n; i++)
       {
 	data[i].size = 0;
 	data[i].col = &oneblock[elemsize * cnt];
@@ -189,18 +189,18 @@ namespace netgen
 
 
 
-  int BASE_TABLE :: AllocatedElements () const
+  size_t BASE_TABLE :: AllocatedElements () const
   {
-    int els = 0;
-    for (int i = 0; i < data.Size(); i++)
+    size_t els = 0;
+    for (size_t i = 0; i < data.Size(); i++)
       els += data[i].maxsize;
     return els;
   }
   
-  int BASE_TABLE :: UsedElements () const
+  size_t BASE_TABLE :: UsedElements () const
   {
-    int els = 0;
-    for (int i = 0; i < data.Size(); i++)
+    size_t els = 0;
+    for (size_t i = 0; i < data.Size(); i++)
       els += data[i].size;
     return els;
   }
@@ -211,4 +211,45 @@ namespace netgen
       data[i].size = data[i].maxsize;
   }
 
+
+  
+  ngstd::Archive & BASE_TABLE :: DoArchive (ngstd::Archive & ar, int elemsize)
+  {
+    if (ar.Output())
+      {
+        size_t entries = 0, size = data.Size();
+        for (size_t i = 0; i < data.Size(); i++)
+          entries += data[i].size;
+        ar & size & entries;
+        for (size_t i = 0; i < data.Size(); i++)
+          {
+            ar & data[i].size;
+            ar.Do ((unsigned char*)data[i].col, data[i].size*elemsize);
+            /*
+            for (size_t j = 0; j < data[i].size*elemsize; j++)
+              ar &  ((unsigned char*) data[i].col)[j];
+            cout << "write " << data[i].size*elemsize << " chars" << endl;
+            */
+          }
+      }
+    else
+      {
+        size_t entries, size;
+        ar & size & entries;
+        data.SetSize(size);
+        oneblock = new char [entries*elemsize];
+        size_t cnt = 0;
+        for (size_t i = 0; i < size; i++)
+          {
+            ar & data[i].size;
+            data[i].col = oneblock+cnt;
+            data[i].maxsize = data[i].size;
+            ar.Do ((unsigned char*)(oneblock+cnt), data[i].size*elemsize);
+            cnt += data[i].size*elemsize;
+          }
+      }
+    return ar;
+  }    
+
+  
 }

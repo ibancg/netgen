@@ -144,11 +144,20 @@ namespace netgen
 		
 		for (PointIndex pi = mesh3d.Points().Begin(); pi < mesh3d.Points().End(); pi++)
 		  meshing.AddPoint (mesh3d[pi], pi);
-		
+
+                /*
 		mesh3d.GetIdentifications().GetPairs (0, connectednodes);
 		for (int i = 1; i <= connectednodes.Size(); i++)
 		  meshing.AddConnectedPair (connectednodes.Get(i));
-		
+                */
+                for (int nr = 1; nr <= mesh3d.GetIdentifications().GetMaxNr(); nr++)
+                  if (mesh3d.GetIdentifications().GetType(nr) != Identifications::PERIODIC)
+                    {
+                      mesh3d.GetIdentifications().GetPairs (nr, connectednodes);
+                      for (auto pair : connectednodes)
+                        meshing.AddConnectedPair (pair);
+                    }
+                
 		for (int i = 1; i <= mesh3d.GetNOpenElements(); i++)
 		  {
 		    Element2d hel = mesh3d.OpenElement(i);
@@ -208,11 +217,11 @@ namespace netgen
 
         int cntsteps = 0;
         if (mesh3d.GetNOpenElements())
-           do
-           {
+          do
+            {
               if (multithread.terminate)
-                 break;
-
+                break;
+              
               mesh3d.FindOpenElements(k);
               PrintMessage (5, mesh3d.GetNOpenElements(), " open faces");
               cntsteps++;
@@ -248,10 +257,10 @@ namespace netgen
               mp.giveuptol = 15 + 10 * cntsteps; 
               mp.sloppy = 5;
               meshing.GenerateMesh (mesh3d, mp);
-
+              
               for (ElementIndex ei = oldne; ei < mesh3d.GetNE(); ei++)
                  mesh3d[ei].SetIndex (k);
-
+              
 
               mesh3d.CalcSurfacesOfNode();
               mesh3d.FindOpenElements(k);
@@ -288,17 +297,17 @@ namespace netgen
                  mesh3d.FindOpenElements(k);
               }
               else
-              {
+                {
                  meshed = 1;
                  PrintMessage (1, "Success !");
-              }
-           }
-           while (!meshed);
-
-           PrintMessage (1, mesh3d.GetNP(), " points, ",
-              mesh3d.GetNE(), " elements");
-     }
-
+                }
+            }
+          while (!meshed);
+        
+        PrintMessage (1, mesh3d.GetNP(), " points, ",
+                      mesh3d.GetNE(), " elements");
+       }
+     
      mp.maxh = globmaxh;
 
      MeshQuality3d (mesh3d);
@@ -584,7 +593,7 @@ namespace netgen
     if (res)
       {
 	mesh3d.FindOpenElements();
-	PrintSysError (1, "Open elemetns: ", mesh3d.GetNOpenElements());
+	PrintSysError (1, "Open elements: ", mesh3d.GetNOpenElements());
 	exit (1);
       }
 

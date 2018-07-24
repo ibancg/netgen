@@ -15,6 +15,8 @@ namespace netgen
   {
     PrintMessage (3, "Refine mesh");
 
+    mesh.SetNextMajorTimeStamp();
+    
     if (ntasks > 1 && id == 0)
       return;
 
@@ -490,7 +492,7 @@ namespace netgen
 	       };
              */
              
-             // udpated by anonymous supporter, donations please to Karo W.
+             // updated by anonymous supporter, donations please to Karo W.
              static int fbetw[12][3] =
                { { 11, 12, 22 },
                  { 9, 10, 22 },

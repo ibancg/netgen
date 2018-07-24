@@ -870,7 +870,7 @@ namespace netgen
 		   const BoxSphere<3> & box) const
   {
     // perform newton steps. normals parallel ?
-    // if not decideable: return 0 
+    // if not decidable: return 0 
   
     Point<3> p = box.Center();
     Vec<3> g1, g2, sol;
@@ -1449,11 +1449,9 @@ namespace netgen
 
     int dir = 0;
     for (int j = 1; j < 3; j++)
-      if (fabs (v12(j)) > v12(dir))
+      if (fabs (v12(j)) < fabs(v12(dir)))
 	dir = j;
     
-    // *testout << "dir = " << dir << endl;
-
     Vec<3> ei = 0.0;
     ei(dir) = 1;
     a2 = Cross (v12, ei);

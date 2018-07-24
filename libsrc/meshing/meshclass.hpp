@@ -307,6 +307,8 @@ namespace netgen
     DLL_HEADER void GetSurfaceElementsOfFace (int facenr, Array<SurfaceElementIndex> & sei) const;
 
     DLL_HEADER ElementIndex AddVolumeElement (const Element & el);
+    // write to pre-allocated container, thread-safe
+    DLL_HEADER void SetVolumeElement (ElementIndex sei, const Element & el);
 
     int GetNE () const { return volelements.Size(); }
 
@@ -347,7 +349,7 @@ namespace netgen
     void SetDimension (int dim) { dimension = dim; }
 
     /// sets internal tables
-    void CalcSurfacesOfNode ();
+    DLL_HEADER void CalcSurfacesOfNode ();
 
     /// additional (temporarily) fix points 
     void FixPoints (const BitArray & fixpoints);
@@ -507,6 +509,7 @@ namespace netgen
 	DLL_HEADER void Merge (const string & filename, const int surfindex_offset = 0);
 
 
+    DLL_HEADER void DoArchive (ngstd::Archive & archive);
     ///
 	DLL_HEADER void ImproveMesh (const MeshingParameters & mp, OPTIMIZEGOAL goal = OPT_QUALITY);
 
@@ -623,8 +626,9 @@ namespace netgen
     }
     size_t GetNCD2Names() const { return cd2names.Size(); }
 
+    DLL_HEADER static string default_bc;
     string * GetBCNamePtr (int bcnr) const
-    { return bcnr < bcnames.Size() ? bcnames[bcnr] : nullptr; }
+    { return (bcnr < bcnames.Size() && bcnames[bcnr]) ? bcnames[bcnr] : &default_bc; }
 
     ///
     void ClearFaceDescriptors()
@@ -705,12 +709,14 @@ namespace netgen
     const MeshTopology & GetTopology () const
     { return topology; }
 
-    DLL_HEADER void UpdateTopology (TaskManager tm = &DummyTaskManager);
+    DLL_HEADER void UpdateTopology (TaskManager tm = &DummyTaskManager,
+                                    Tracer tracer = &DummyTracer);
   
     class CurvedElements & GetCurvedElements () const
     { return *curvedelems; }
     
     DLL_HEADER void BuildCurvedElements  (const class Refinement * ref, int aorder, bool arational = false);
+    DLL_HEADER void BuildCurvedElements  (int aorder);
 
     const class AnisotropicClusters & GetClusters () const
     { return *clusters; }

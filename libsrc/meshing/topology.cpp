@@ -4,8 +4,6 @@
 namespace netgen
 {
 
-
-
   
   template <class T>
   void QuickSortRec (FlatArray<T> data,
@@ -46,8 +44,8 @@ namespace netgen
   MeshTopology ::  MeshTopology (const Mesh & amesh)
     : mesh(&amesh)
   {
-    buildedges = 1;
-    buildfaces = 1;
+    buildedges = true;
+    buildfaces = true;
     timestamp = -1;
   }
 
@@ -161,7 +159,7 @@ namespace netgen
           else
             {
               // quad
-              int facenum;
+              // int facenum;
               INDEX_4 face4(el[elfaces[j][0]], el[elfaces[j][1]],
                             el[elfaces[j][2]], el[elfaces[j][3]]);
               
@@ -226,7 +224,7 @@ namespace netgen
           
           { // triangle
             
-            int facenum;
+            // int facenum;
             int facedir;
             
             INDEX_4 face(el.PNum(elfaces[0][0]),
@@ -275,7 +273,7 @@ namespace netgen
           
           {
             // quad
-            int facenum;
+            // int facenum;
             int facedir;
             
             INDEX_4 face4(el.PNum(elfaces[0][0]),
@@ -331,7 +329,7 @@ namespace netgen
   }
   
   
-  void MeshTopology :: Update (TaskManager tm)
+  void MeshTopology :: Update (TaskManager tm, Tracer tracer)
   {
     static int timer = NgProfiler::CreateTimer ("topology");
     NgProfiler::RegionTimer reg (timer);
@@ -358,7 +356,8 @@ namespace netgen
     (*testout) << "nseg = " << nseg << endl;
     (*testout) << "np   = " << np << endl;
     (*testout) << "nv   = " << nv << endl;
-    
+
+    (*tracer) ("Topology::Update setup tables", false);
     Array<int,PointIndex::BASE> cnt(nv);
     Array<int> vnums;
 
@@ -369,36 +368,91 @@ namespace netgen
       vertex to segment 
     */
     cnt = 0;
+    /*
     for (ElementIndex ei = 0; ei < ne; ei++)
       {
 	const Element & el = (*mesh)[ei];
 	for (int j = 0; j < el.GetNV(); j++)
 	  cnt[el[j]]++;
       }
-
+    */
+    ParallelForRange
+      (tm, ne,
+       [&] (size_t begin, size_t end)
+       {
+         for (ElementIndex ei = begin; ei < end; ei++)
+           {
+             const Element & el = (*mesh)[ei];
+             for (int j = 0; j < el.GetNV(); j++)
+               AsAtomic(cnt[el[j]])++;
+           }
+       });
+    
     vert2element = TABLE<ElementIndex,PointIndex::BASE> (cnt);
+    /*
     for (ElementIndex ei = 0; ei < ne; ei++)
       {
 	const Element & el = (*mesh)[ei];
 	for (int j = 0; j < el.GetNV(); j++)
 	  vert2element.AddSave (el[j], ei);
       }
-
+    */
+    ParallelForRange
+      (tm, ne,
+       [&] (size_t begin, size_t end)
+       {
+         for (ElementIndex ei = begin; ei < end; ei++)
+           {
+             const Element & el = (*mesh)[ei];
+             for (int j = 0; j < el.GetNV(); j++)
+               vert2element.ParallelAdd (el[j], ei);
+           }
+       });
+    
     cnt = 0;
+    /*
     for (SurfaceElementIndex sei = 0; sei < nse; sei++)
       {
 	const Element2d & el = (*mesh)[sei];
 	for (int j = 0; j < el.GetNV(); j++)
 	  cnt[el[j]]++;
       }
+    */
+    ParallelForRange
+      (tm, nse,
+       [&] (size_t begin, size_t end)
+       {
+         for (SurfaceElementIndex ei = begin; ei < end; ei++)
+           {
+             const Element2d & el = (*mesh)[ei];
+             for (int j = 0; j < el.GetNV(); j++)
+               AsAtomic(cnt[el[j]])++;
+           }
+       });
+
+    
 
     vert2surfelement = TABLE<SurfaceElementIndex,PointIndex::BASE> (cnt);
+    /*
     for (SurfaceElementIndex sei = 0; sei < nse; sei++)
       {
 	const Element2d & el = (*mesh)[sei];
 	for (int j = 0; j < el.GetNV(); j++)
 	  vert2surfelement.AddSave (el[j], sei);
       }
+    */
+    ParallelForRange
+      (tm, nse,
+       [&] (size_t begin, size_t end)
+       {
+         for (SurfaceElementIndex sei = begin; sei < end; sei++)
+           {
+             const Element2d & el = (*mesh)[sei];
+             for (int j = 0; j < el.GetNV(); j++)
+               vert2surfelement.ParallelAdd (el[j], sei);
+           }
+       });
+
 
     cnt = 0;
     for (SegmentIndex si = 0; si < nseg; si++)
@@ -430,6 +484,7 @@ namespace netgen
 	const Element0d & pointel = mesh->pointelements[pei];
 	vert2pointelement.AddSave (pointel.pnum, pei);
       }
+    (*tracer) ("Topology::Update setup tables", true);
 
     
     if (buildedges)
@@ -1055,6 +1110,7 @@ namespace netgen
 	    surf2volelement.Elem(i)[0] = 0;
 	    surf2volelement.Elem(i)[1] = 0;
 	  }
+        (*tracer) ("Topology::Update build surf2vol", false);        
 	for (int i = 1; i <= ne; i++)
 	  for (int j = 0; j < 6; j++)
 	    {
@@ -1068,6 +1124,7 @@ namespace netgen
 		  surf2volelement.Elem(sel)[0] = i;
 		}
 	    }
+        (*tracer) ("Topology::Update build surf2vol", true);        
 
 	face2vert.SetAllocSize (face2vert.Size());
 
@@ -1079,9 +1136,11 @@ namespace netgen
 	// paralleltop.Reset ();
 #endif
 
+        (*tracer) ("Topology::Update count face_els", false);
 	Array<short int> face_els(nfa), face_surfels(nfa);
 	face_els = 0;
 	face_surfels = 0;
+        /*
 	Array<int> hfaces;
 	for (int i = 1; i <= ne; i++)
 	  {
@@ -1089,8 +1148,22 @@ namespace netgen
 	    for (int j = 0; j < hfaces.Size(); j++)
 	      face_els[hfaces[j]-1]++;
 	  }
+        */
+        ParallelForRange
+          (tm, ne,
+            [&] (size_t begin, size_t end)
+            {
+              Array<int> hfaces;              
+              for (ElementIndex ei = begin; ei < end; ei++)
+                {
+                  GetElementFaces (ei+1, hfaces);
+                  for (auto f : hfaces)
+                    AsAtomic(face_els[f-1])++;
+                }
+            });        
 	for (int i = 1; i <= nse; i++)
 	  face_surfels[GetSurfaceElementFace (i)-1]++;
+        (*tracer) ("Topology::Update count face_els", true);
 
 
 	if (ne)
@@ -1573,7 +1646,7 @@ namespace netgen
     else
       {
         // quad
-        int facenum;
+        // int facenum;
         INDEX_4 face4(el[elfaces[j][0]], el[elfaces[j][1]],
                       el[elfaces[j][2]], el[elfaces[j][3]]);
         
@@ -1640,7 +1713,7 @@ namespace netgen
     else
       {
         // quad
-        int facenum;
+        // int facenum;
         INDEX_4 face4(el[elfaces[j][0]], el[elfaces[j][1]],
                       el[elfaces[j][2]], el[elfaces[j][3]]);
         
