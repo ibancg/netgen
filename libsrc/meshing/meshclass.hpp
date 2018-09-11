@@ -32,6 +32,11 @@ namespace netgen
     /// point coordinates
     T_POINTS points;
 
+#ifdef PARALLEL
+    // The communicator for this mesh. (more or less dummy for now!)  
+    MPI_Comm comm;
+#endif
+    
     /// line-segments at edges
     Array<Segment, 0, size_t> segments;
     /// surface elements, 2d-inner elements
@@ -90,6 +95,9 @@ namespace netgen
 
     /// labels for co dim 2 bboundary conditions
     Array<string*> cd2names;
+
+    /// labels for co dim 3 bbboundary conditions
+    Array<string*> cd3names;
 
     /// Periodic surface, close surface, etc. identifications
     Identifications * ident;
@@ -625,6 +633,18 @@ namespace netgen
       return &cd2_default_name;
     }
     size_t GetNCD2Names() const { return cd2names.Size(); }
+
+    DLL_HEADER void SetNCD3Names (int ncd3n);
+    DLL_HEADER void SetCD3Name (int cd3nr, const string & abcname);
+
+    DLL_HEADER const string & GetCD3Name (int cd3nr ) const;
+    DLL_HEADER static string cd3_default_name;
+    string * GetCD3NamePtr (int cd3nr ) const
+    {
+      if (cd3nr < cd3names.Size() && cd3names[cd3nr]) return cd3names[cd3nr];
+      return &cd3_default_name;
+    }
+    size_t GetNCD3Names() const { return cd3names.Size(); }
 
     DLL_HEADER static string default_bc;
     string * GetBCNamePtr (int bcnr) const
