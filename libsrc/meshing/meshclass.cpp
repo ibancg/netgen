@@ -314,7 +314,7 @@ namespace netgen
     SurfaceElementIndex si = surfelements.Size();
     surfelements.Append (el); 
 
-    if (el.index > facedecoding.Size())
+    if (el.index<=0 || el.index > facedecoding.Size())
       cerr << "has no facedecoding: fd.size = " << facedecoding.Size() << ", ind = " << el.index << endl;
 
     surfelements.Last().next = facedecoding[el.index-1].firstelement;
@@ -1173,7 +1173,7 @@ namespace netgen
 		for (i = 1; i<= GetNSeg(); i++)
 		  {
 		    Segment & seg = LineSegment(i);
-		    if ( seg.cd2i <= n )
+		    if ( seg.edgenr <= n )
 		      seg.SetBCName (cd2names[seg.edgenr-1]);
 		    else
 		      seg.SetBCName(0);
