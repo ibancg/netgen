@@ -132,8 +132,8 @@ namespace netgen
     /// mesh access semaphors.
     NgMutex majormutex;
 
-    SYMBOLTABLE< Array<int>* > userdata_int;
-    SYMBOLTABLE< Array<double>* > userdata_double; 
+    SymbolTable< Array<int>* > userdata_int;
+    SymbolTable< Array<double>* > userdata_double;
 
 
     mutable Array< Point3d > pointcurves;
@@ -517,7 +517,7 @@ namespace netgen
 	DLL_HEADER void Merge (const string & filename, const int surfindex_offset = 0);
 
 
-    DLL_HEADER void DoArchive (ngstd::Archive & archive);
+    DLL_HEADER void DoArchive (Archive & archive);
     ///
 	DLL_HEADER void ImproveMesh (const MeshingParameters & mp, OPTIMIZEGOAL goal = OPT_QUALITY);
 

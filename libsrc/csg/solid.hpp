@@ -55,8 +55,22 @@ namespace netgen
   public:
     Solid (Primitive * aprim);
     Solid (optyp aop, Solid * as1, Solid * as2 = NULL);
+    // default constructor for archive
+    Solid () {}
     ~Solid ();
 
+    void DoArchive(Archive& archive)
+    {
+      archive & name & prim & s1 & s2 & visited & maxh & num_surfs;
+      if(archive.Output())
+        archive << int(op);
+      else
+        {
+          int iop;
+          archive & iop;
+          op = optyp(iop);
+        }
+    }
     const char * Name () const { return name; }
     void SetName (const char * aname);
 
@@ -144,7 +158,7 @@ namespace netgen
     { return maxh; }
 
     void GetSolidData (ostream & ost, int first = 1) const;
-    static Solid * CreateSolid (istream & ist, const SYMBOLTABLE<Solid*> & solids);
+    static Solid * CreateSolid (istream & ist, const SymbolTable<Solid*> & solids);
 
 
     static BlockAllocator ball;

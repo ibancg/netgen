@@ -17,11 +17,15 @@
 #include "../include/mydefs.hpp"
 
 
-#include "ngexception.hpp"
+#include "../core/ngcore.hpp"
+namespace netgen
+{
+  using namespace ngcore;
+  using NgException = Exception;
+}
 #include "parthreads.hpp"
 // #include "moveablemem.hpp"
 #include "dynamicmem.hpp"
-#include "archive_base.hpp"
 
 #include "template.hpp"
 #include "array.hpp"
@@ -29,7 +33,6 @@
 #include "hashtabl.hpp"
 
 
-#include "symbolta.hpp"
 #include "bitarray.hpp"
 #include "flags.hpp"
 #include "spbita2d.hpp"
@@ -40,7 +43,6 @@
 #include "sort.hpp"
 #include "stack.hpp"
 #include "mystring.hpp"
-#include "profiler.hpp"
 
 #include "mpi_interface.hpp"
 #include "netgenout.hpp"

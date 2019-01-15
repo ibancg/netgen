@@ -69,7 +69,7 @@ namespace netgen
     mesh -> Save (ost);
   }
 
-  void Ngx_Mesh :: DoArchive (ngstd::Archive & archive)
+  void Ngx_Mesh :: DoArchive (Archive & archive)
   {
     if (archive.Input()) mesh = make_shared<Mesh>();
     mesh->DoArchive(archive);
@@ -717,6 +717,16 @@ namespace netgen
     return mesh->GetIdentifications().GetType(idnr+1);
   }
 
+  Ng_BufferMS<int,4> Ngx_Mesh::GetFaceEdges (int fnr) const
+  {
+    const MeshTopology & topology = mesh->GetTopology();
+    ArrayMem<int,4> ia;
+    topology.GetFaceEdges (fnr+1, ia);
+    Ng_BufferMS<int,4> res(ia.Size());
+    for (size_t i = 0; i < ia.Size(); i++)
+      res[i] = ia[i]-1;
+    return res;
+  }
 
 
 
@@ -1042,6 +1052,19 @@ namespace netgen
     NgLock meshlock (mesh->MajorMutex(), true);
     mesh->BuildCurvedElements(order);
   }
+
+
+  template <>
+  void Ngx_Mesh :: SetRefinementFlag<2> (size_t elnr, bool flag)
+  {
+    mesh->SurfaceElement(elnr+1).SetRefinementFlag(flag);
+  }
+
+  template <>
+  void Ngx_Mesh :: SetRefinementFlag<3> (size_t elnr, bool flag)
+  {
+    mesh->VolumeElement(elnr+1).SetRefinementFlag(flag);    
+  }
   
   void Ngx_Mesh :: Refine (NG_REFINEMENT_TYPE reftype,
                            void (*task_manager)(function<void(int,int)>),
@@ -1069,6 +1092,120 @@ namespace netgen
     mesh -> GetCurvedElements().SetIsHighOrder (false);
   }
 
+
+
+
+
+  // just copied with redesign
+
+  size_t Ngx_Mesh::GetNP() const
+  {
+    return mesh->GetNP();
+  }
+
+  
+  int Ngx_Mesh::GetSurfaceElementSurfaceNumber (size_t ei) const
+  {
+    if (mesh->GetDimension() == 3)
+      return mesh->GetFaceDescriptor(mesh->SurfaceElement(ei).GetIndex()).SurfNr();
+    else
+      return mesh->LineSegment(ei).si;
+  }
+  int Ngx_Mesh::GetSurfaceElementFDNumber (size_t ei) const
+  {
+    if (mesh->GetDimension() == 3)
+      return mesh->SurfaceElement(ei).GetIndex();
+    else
+      return -1;
+  }
+
+  
+  void Ngx_Mesh::HPRefinement (int levels, double parameter, bool setorders,
+                               bool ref_level)
+  {
+    NgLock meshlock (mesh->MajorMutex(), true);
+    Refinement & ref = const_cast<Refinement&> (mesh->GetGeometry()->GetRefinement());
+    ::netgen::HPRefinement (*mesh, &ref, levels, parameter, setorders, ref_level);
+  }
+  
+int Ngx_Mesh::GetElementOrder (int enr) const
+{
+  if (mesh->GetDimension() == 3)
+    return mesh->VolumeElement(enr).GetOrder();
+  else
+    return mesh->SurfaceElement(enr).GetOrder();
+}
+
+void Ngx_Mesh::GetElementOrders (int enr, int * ox, int * oy, int * oz) const
+{
+  if (mesh->GetDimension() == 3)
+    mesh->VolumeElement(enr).GetOrder(*ox, *oy, *oz);
+  else
+    mesh->SurfaceElement(enr).GetOrder(*ox, *oy, *oz);
+}
+
+void Ngx_Mesh::SetElementOrder (int enr, int order)
+{
+  if (mesh->GetDimension() == 3)
+    return mesh->VolumeElement(enr).SetOrder(order);
+  else
+    return mesh->SurfaceElement(enr).SetOrder(order);
+}
+
+void Ngx_Mesh::SetElementOrders (int enr, int ox, int oy, int oz)
+{
+  if (mesh->GetDimension() == 3)
+    mesh->VolumeElement(enr).SetOrder(ox, oy, oz);
+  else
+    mesh->SurfaceElement(enr).SetOrder(ox, oy);
+}
+
+
+int Ngx_Mesh::GetSurfaceElementOrder (int enr) const
+{
+  return mesh->SurfaceElement(enr).GetOrder();
+}
+
+int Ngx_Mesh::GetClusterRepVertex (int pi) const
+{
+  return mesh->GetClusters().GetVertexRepresentant(pi);
+}
+
+int Ngx_Mesh::GetClusterRepEdge (int pi) const
+{
+  return mesh->GetClusters().GetEdgeRepresentant(pi);
+}
+
+int Ngx_Mesh::GetClusterRepFace (int pi) const
+{
+  return mesh->GetClusters().GetFaceRepresentant(pi);
+}
+
+int Ngx_Mesh::GetClusterRepElement (int pi) const
+{
+  return mesh->GetClusters().GetElementRepresentant(pi);
+}
+
+
+
+
+//HERBERT: falsche Anzahl von Argumenten
+//void Ngx_Mesh::GetSurfaceElementOrders (int enr, int * ox, int * oy, int * oz)
+void Ngx_Mesh::GetSurfaceElementOrders (int enr, int * ox, int * oy) const
+{
+  int d; 
+  mesh->SurfaceElement(enr).GetOrder(*ox, *oy, d);
+}
+
+void Ngx_Mesh::SetSurfaceElementOrder (int enr, int order)
+{
+  return mesh->SurfaceElement(enr).SetOrder(order);
+}
+
+void Ngx_Mesh::SetSurfaceElementOrders (int enr, int ox, int oy)
+{
+  mesh->SurfaceElement(enr).SetOrder(ox, oy);
+}
 
   
 

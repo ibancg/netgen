@@ -39,7 +39,14 @@ namespace netgen
   public:
     TopLevelObject (Solid * asolid,
 		    Surface * asurface = NULL);
+    // default constructor for archive
+    TopLevelObject() {}
 
+    void DoArchive(Archive& archive)
+    {
+      archive & solid & surface & red & blue & green & visible & transp & maxh
+        & material & layer & bc & bcname;
+    }
     const Solid * GetSolid() const { return solid; }
     Solid * GetSolid() { return solid; }
 
@@ -95,7 +102,7 @@ namespace netgen
   {
   private:
     /// all surfaces
-    SYMBOLTABLE<Surface*> surfaces;
+    SymbolTable<Surface*> surfaces;
 
   public:
     /// primitive of surface
@@ -105,12 +112,12 @@ namespace netgen
     Array<Surface*> delete_them;
 
     /// all named solids
-    SYMBOLTABLE<Solid*> solids;
+    SymbolTable<Solid*> solids;
 
     /// all 2d splinecurves
-    SYMBOLTABLE< SplineGeometry<2>* > splinecurves2d;
+    SymbolTable< SplineGeometry<2>* > splinecurves2d;
     /// all 3d splinecurves
-    SYMBOLTABLE< SplineGeometry<3>* > splinecurves3d;
+    SymbolTable< SplineGeometry<3>* > splinecurves3d;
 
     /// all top level objects: solids and surfaces
     Array<TopLevelObject*> toplevelobjects;
@@ -124,6 +131,11 @@ namespace netgen
       UserPoint() = default;
       UserPoint (Point<3> p, int _index) : Point<3>(p), index(_index) { ; }
       int GetIndex() const { return index; }
+      void DoArchive(Archive& archive)
+      {
+        archive & index;
+        Point<3>::DoArchive(archive);
+      }
     };
     
   private:
@@ -165,14 +177,14 @@ namespace netgen
 
     void Clean ();
 
-    virtual void Save (string filename) const;
+    virtual void Save (string filename) const override;
     void Save (ostream & ost) const;
     void Load (istream & ist);
 
     void SaveSurfaces (ostream & out) const;
     void LoadSurfaces (istream & in);
 
-    virtual void SaveToMeshFile (ostream & ost) const;
+    virtual void SaveToMeshFile (ostream & ost) const override;
 
     int GetChangeVal() { return changeval; }
     void Change() { changeval++; }
@@ -191,13 +203,15 @@ namespace netgen
     const Solid * GetSolid (const string & name) const;
     int GetNSolids () const { return solids.Size(); }
     const Solid * GetSolid (int i) const { return solids[i]; }
-    const SYMBOLTABLE<Solid*> & GetSolids () const { return solids; }
+    const SymbolTable<Solid*> & GetSolids () const { return solids; }
 
 
     void SetSplineCurve (const char * name, SplineGeometry<2> * spl);
     void SetSplineCurve (const char * name, SplineGeometry<3> * spl);
     const SplineGeometry<2> * GetSplineCurve2d (const string & name) const;
     const SplineGeometry<3> * GetSplineCurve3d (const string & name) const;
+
+    void DoArchive(Archive& archive) override;
     
 
     void SetFlags (const char * solidname, const Flags & flags);
@@ -330,9 +344,9 @@ namespace netgen
 
     Array<BCModification> bcmodifications;
 
-    virtual int GenerateMesh (shared_ptr<Mesh> & mesh, MeshingParameters & mparam);
+    virtual int GenerateMesh (shared_ptr<Mesh> & mesh, MeshingParameters & mparam) override;
 
-    virtual const Refinement & GetRefinement () const;
+    virtual const Refinement & GetRefinement () const override;
 
     void AddSplineSurface (shared_ptr<SplineSurface> ss) { spline_surfaces.Append(ss); }
   };
