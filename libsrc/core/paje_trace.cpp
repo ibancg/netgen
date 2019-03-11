@@ -9,13 +9,12 @@
 #include "paje_trace.hpp"
 #include "profiler.hpp"
 
-static constexpr int MAX_TRACE_LINE_SIZE = 50;
 extern const char *header;
 
 namespace ngcore
 {
   // Produce no traces by default
-  size_t PajeTrace::max_tracefile_size = 11110000;
+  size_t PajeTrace::max_tracefile_size = 0;
 
   // If true, produce variable counting active threads
   // increases trace by a factor of two
@@ -34,7 +33,7 @@ namespace ngcore
     if(max_num_events_per_thread>0)
     {
       logger->info( "Tracefile size = {}MB", max_tracefile_size/1024/1024);
-      logger->info( "Tracing {} events per thread", max_num_events_per_thread , " events per thread");
+      logger->info( "Tracing {} events per thread", max_num_events_per_thread);
     }
 
     tasks.resize(nthreads);
@@ -92,7 +91,7 @@ namespace ngcore
 
       FILE * ctrace_stream;
       TTimePoint start_time;
-      std::shared_ptr<spdlog::logger> logger = GetLogger("PajeTrace");
+      std::shared_ptr<Logger> logger = GetLogger("PajeTrace");
 
 
       double ConvertTime(TTimePoint t) {

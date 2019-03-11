@@ -1225,14 +1225,14 @@ namespace netgen
    }
   */
 
-
+  /*
 #ifndef WIN32
    void ResetTime ()
    {
       ;
    }
 #endif
-
+  */
 
 
    void MyBeep (int i)

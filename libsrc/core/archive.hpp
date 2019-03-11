@@ -8,7 +8,7 @@
 #include <map>                  // for map
 #include <memory>               // for shared_ptr
 #include <string>               // for string
-#include <type_traits>          // for declval, enable_if, false_type, is_co...
+#include <type_traits>          // for declval, enable_if_t, false_type, is_co...
 #include <typeinfo>             // for type_info
 #include <utility>              // for move, swap, pair
 #include <vector>               // for vector
@@ -39,7 +39,7 @@ namespace ngcore
     T* constructIfPossible_impl(Rest... /*unused*/)
     { throw Exception(std::string(Demangle(typeid(T).name())) + " is not default constructible!"); }
 
-    template<typename T, typename= typename std::enable_if<std::is_constructible<T>::value>::type>
+    template<typename T, typename= std::enable_if_t<std::is_constructible<T>::value>>
     T* constructIfPossible_impl(int /*unused*/) { return new T; } // NOLINT
 
     template<typename T>
@@ -106,7 +106,7 @@ namespace ngcore
   protected:
     bool shallow_to_python = false;
     std::map<std::string, VersionInfo> version_map = GetLibraryVersions();
-    std::shared_ptr<spdlog::logger> logger = GetLogger("Archive");
+    std::shared_ptr<Logger> logger = GetLogger("Archive");
   public:
     Archive() = delete;
     Archive(const Archive&) = delete;
@@ -152,6 +152,9 @@ namespace ngcore
     bool Input () const { return !is_output; }
     const VersionInfo& GetVersion(const std::string& library)
     { return version_map[library]; }
+
+    // only used for PyArchive
+    virtual void NeedsVersion(const std::string& /*unused*/, const std::string& /*unused*/) {}
 
     // Pure virtual functions that have to be implemented by In-/OutArchive
     virtual Archive & operator & (double & d) = 0;
@@ -206,11 +209,25 @@ namespace ngcore
       return (*this);
     }
 
+    // archive implementation for enums
+    template<typename T>
+    auto operator & (T& val) -> std::enable_if_t<std::is_enum<T>::value, Archive&>
+    {
+      int enumval;
+      if(Output())
+        enumval = int(val);
+      *this & enumval;
+      if(Input())
+        val = T(enumval);
+      return *this;
+    }
+
     // vector<bool> has special implementation (like a bitarray) therefore
     // it needs a special overload (this could probably be more efficient, but we
     // don't use it that often anyway)
     Archive& operator& (std::vector<bool>& v)
     {
+      logger->debug("In special archive for std::vector<bool>");
       size_t size;
       if(Output())
         size = v.size();
@@ -257,7 +274,7 @@ namespace ngcore
     }
     // Archive arrays =====================================================
     // this functions can be overloaded in Archive implementations for more efficiency
-    template <typename T, typename = typename std::enable_if<is_archivable<T>>::type>
+    template <typename T, typename = std::enable_if_t<is_archivable<T>>>
     Archive & Do (T * data, size_t n)
     { for (size_t j = 0; j < n; j++) { (*this) & data[j]; }; return *this; }; // NOLINT
 
@@ -295,11 +312,11 @@ namespace ngcore
     {
       if(Output())
         {
-          NETGEN_DEBUG_LOG(logger, "Store shared ptr of type " + Demangle(typeid(T).name()));
+          logger->debug("Store shared ptr of type {}", Demangle(typeid(T).name()));
           // save -2 for nullptr
           if(!ptr)
             {
-              NETGEN_DEBUG_LOG(logger, "Storing nullptr");
+              logger->debug("Storing nullptr");
               return (*this) << -2;
             }
 
@@ -308,8 +325,9 @@ namespace ngcore
           // Downcasting is only possible for our registered classes
           if(typeid(T) != typeid(*ptr))
             {
-              NETGEN_DEBUG_LOG(logger, "Typids are different: " + Demangle(typeid(T).name()) + " vs. " +
-                               Demangle(typeid(*ptr).name()));
+              logger->debug("Typids are different: {} vs {}",
+                            Demangle(typeid(T).name()),
+                            Demangle(typeid(*ptr).name()));
               if(!IsRegistered(Demangle(typeid(*ptr).name())))
                   throw Exception(std::string("Archive error: Polymorphic type ")
                                   + Demangle(typeid(*ptr).name())
@@ -318,7 +336,7 @@ namespace ngcore
               // if there was a true downcast we have to store more information
               if(reg_ptr != static_cast<void*>(ptr.get()))
                 {
-                  NETGEN_DEBUG_LOG(logger, "Multiple/Virtual inheritance involved, need to cast pointer");
+                  logger->debug("Multiple/Virtual inheritance involved, need to cast pointer");
                   neededDowncast = true;
                 }
             }
@@ -326,8 +344,8 @@ namespace ngcore
           // if not found store -1 and the pointer
           if(pos == shared_ptr2nr.end())
             {
-              NETGEN_DEBUG_LOG(logger, "Didn't find the shared_ptr, create new registry entry at " +
-                               std::to_string(shared_ptr_count));
+              logger->debug("Didn't find the shared_ptr, create new registry entry at {}",
+                            shared_ptr_count);
               auto p = ptr.get();
               (*this) << -1;
               (*this) & neededDowncast & p;
@@ -338,27 +356,27 @@ namespace ngcore
               return *this;
             }
           // if found store the position and if it has to be downcasted and how
-          NETGEN_DEBUG_LOG(logger, "Found shared_ptr at position " + std::to_string(pos->second));
+          logger->debug("Found shared_ptr at position {}", pos->second);
           (*this) << pos->second << neededDowncast;
           if(neededDowncast)
             (*this) << Demangle(typeid(*ptr).name());
         }
       else // Input
         {
-          NETGEN_DEBUG_LOG(logger, "Reading shared_ptr of type " + Demangle(typeid(T).name()));
+          logger->debug("Reading shared_ptr of type {}", Demangle(typeid(T).name()));
           int nr;
           (*this) & nr;
           // -2 restores a nullptr
           if(nr == -2)
             {
-              NETGEN_DEBUG_LOG(logger, "Reading a nullptr");
+              logger->debug("Reading a nullptr");
               ptr = nullptr;
               return *this;
             }
           // -1 restores a new shared ptr by restoring the inner pointer and creating a shared_ptr to it
           if (nr == -1)
             {
-              NETGEN_DEBUG_LOG(logger, "Createing new shared_ptr");
+              logger->debug("Createing new shared_ptr");
               T* p = nullptr;
               bool neededDowncast;
               (*this) & neededDowncast & p;
@@ -366,7 +384,7 @@ namespace ngcore
               // if we did downcast we need to store a shared_ptr<void> to the true object
               if(neededDowncast)
                 {
-                  NETGEN_DEBUG_LOG(logger, "Shared pointer needed downcasting");
+                  logger->debug("Shared pointer needed downcasting");
                   std::string name;
                   (*this) & name;
                   auto info = GetArchiveRegister(name);
@@ -378,19 +396,19 @@ namespace ngcore
                 }
               else
                 {
-                  NETGEN_DEBUG_LOG(logger, "Shared pointer didn't need downcasting");
+                  logger->debug("Shared pointer didn't need downcasting");
                   nr2shared_ptr.push_back(ptr);
                 }
             }
           else
             {
-              NETGEN_DEBUG_LOG(logger, "Reading already existing pointer at entry " + std::to_string(nr));
+              logger->debug("Reading already existing pointer at entry {}", nr);
               auto other = nr2shared_ptr[nr];
               bool neededDowncast;
               (*this) & neededDowncast;
               if(neededDowncast)
                 {
-                  NETGEN_DEBUG_LOG(logger, "Shared pointer needed pointer downcast");
+                  logger->debug("Shared pointer needed pointer downcast");
                   // if there was a downcast we can expect the class to be registered (since archiving
                   // wouldn't have worked else)
                   std::string name;
@@ -404,7 +422,7 @@ namespace ngcore
                 }
               else
                 {
-                  NETGEN_DEBUG_LOG(logger, "Shared pointer didn't need pointer casts");
+                  logger->debug("Shared pointer didn't need pointer casts");
                   ptr = std::static_pointer_cast<T>(other);
                 }
             }
@@ -418,18 +436,19 @@ namespace ngcore
     {
       if (Output())
         {
-          NETGEN_DEBUG_LOG(logger, "Store pointer of type " + Demangle(typeid(T).name()));
+          logger->debug("Store pointer of type {}",Demangle(typeid(T).name()));
           // if the pointer is null store -2
           if (!p)
             {
-              NETGEN_DEBUG_LOG(logger, "Storing nullptr");
+              logger->debug("Storing nullptr");
               return (*this) << -2;
             }
           auto reg_ptr = static_cast<void*>(p);
           if(typeid(T) != typeid(*p))
             {
-              NETGEN_DEBUG_LOG(logger, "Typeids are different: " + Demangle(typeid(T).name()) + " vs. " +
-                               Demangle(typeid(*p).name()));
+              logger->debug("Typeids are different: {} vs {}",
+                            Demangle(typeid(T).name()),
+                            Demangle(typeid(*p).name()));
               if(!IsRegistered(Demangle(typeid(*p).name())))
                 throw Exception(std::string("Archive error: Polymorphic type ")
                                 + Demangle(typeid(*p).name())
@@ -437,20 +456,20 @@ namespace ngcore
               reg_ptr = GetArchiveRegister(Demangle(typeid(*p).name())).downcaster(typeid(T), static_cast<void*>(p));
               if(reg_ptr != static_cast<void*>(p))
                 {
-                  NETGEN_DEBUG_LOG(logger, "Multiple/Virtual inheritance involved, need to cast pointer");
+                  logger->debug("Multiple/Virtual inheritance involved, need to cast pointer");
                 }
             }
           auto pos = ptr2nr.find(reg_ptr);
           // if the pointer is not found in the map create a new entry
           if (pos == ptr2nr.end())
             {
-              NETGEN_DEBUG_LOG(logger, "Didn't find pointer, create new registry entry at " +
-                               std::to_string(ptr_count));
+              logger->debug("Didn't find pointer, create new registry entry at {}",
+                            ptr_count);
               ptr2nr[reg_ptr] = ptr_count++;
               if(typeid(*p) == typeid(T))
                 if (std::is_constructible<T>::value)
                                {
-                                 NETGEN_DEBUG_LOG(logger, "Store standard class pointer (no virt. inh,...)");
+                                 logger->debug("Store standard class pointer (no virt. inh,...)");
                                  return (*this) << -1 & (*p);
                                }
                 else
@@ -466,7 +485,7 @@ namespace ngcore
                     throw Exception(std::string("Archive error: Polymorphic type ")
                                     + Demangle(typeid(*p).name())
                                     + " not registered for archive");
-                  NETGEN_DEBUG_LOG(logger, "Store a possibly more complicated pointer");
+                  logger->debug("Store a possibly more complicated pointer");
                   return (*this) << -3 << Demangle(typeid(*p).name()) & (*p);
                 }
             }
@@ -474,39 +493,37 @@ namespace ngcore
             {
               (*this) & pos->second;
               bool downcasted = !(reg_ptr == static_cast<void*>(p) );
-              NETGEN_DEBUG_LOG(logger, "Store a the existing position in registry at " +
-                               std::to_string(pos->second));
-              NETGEN_DEBUG_LOG(logger, std::string("Pointer ") + (downcasted ? "needs " : "doesn't need ") +
-                               "downcasting");
+              logger->debug("Store a the existing position in registry at {}", pos->second);
+              logger->debug("Pointer {} downcasting", downcasted ? "needs" : "doesn't need");
               // store if the class has been downcasted and the name
               (*this) << downcasted << Demangle(typeid(*p).name());
             }
         }
       else
         {
-          NETGEN_DEBUG_LOG(logger, "Reading pointer of type " + Demangle(typeid(T).name()));
+          logger->debug("Reading pointer of type {}", Demangle(typeid(T).name()));
           int nr;
           (*this) & nr;
           if (nr == -2) // restore a nullptr
             {
-              NETGEN_DEBUG_LOG(logger, "Loading a nullptr");
+              logger->debug("Loading a nullptr");
               p = nullptr;
             }
           else if (nr == -1) // create a new pointer of standard type (no virtual or multiple inheritance,...)
             {
-              NETGEN_DEBUG_LOG(logger, "Load a new pointer to a simple class");
+              logger->debug("Load a new pointer to a simple class");
               p = detail::constructIfPossible<T>();
               nr2ptr.push_back(p);
               (*this) & *p;
             }
           else if(nr == -3) // restore one of our registered classes that can have multiple inheritance,...
             {
-              NETGEN_DEBUG_LOG(logger, "Load a new pointer to a potentially more complicated class "
-                               "(allows for multiple/virtual inheritance,...)");
+              logger->debug("Load a new pointer to a potentially more complicated class "
+                            "(allows for multiple/virtual inheritance,...)");
               // As stated above, we want this special behaviour only for our classes that implement DoArchive
               std::string name;
               (*this) & name;
-              NETGEN_DEBUG_LOG(logger, "Name = " + name);
+              logger->debug("Name = {}", name);
               auto info = GetArchiveRegister(name);
               // the creator creates a new object of type name, and returns a void* pointing
               // to T (which may have an offset)
@@ -518,13 +535,11 @@ namespace ngcore
             }
           else
             {
-              NETGEN_DEBUG_LOG(logger, "Restoring pointer to already existing object at registry position " +
-                               std::to_string(nr));
+              logger->debug("Restoring pointer to already existing object at registry position {}", nr);
               bool downcasted;
               std::string name;
               (*this) & downcasted & name;
-              NETGEN_DEBUG_LOG(logger, std::string(downcasted ? "Downcasted" : "Not downcasted") +
-                               " object of type " + name);
+              logger->debug("{} object of type {}", downcasted ? "Downcasted" : "Not downcasted", name);
               if(downcasted)
                 {
                   // if the class has been downcasted we can assume it is in the register
@@ -901,6 +916,7 @@ namespace ngcore
   private:
     pybind11::list lst;
     size_t index = 0;
+    std::map<std::string, VersionInfo> version_needed;
   protected:
     using ARCHIVE::stream;
     using ARCHIVE::version_map;
@@ -916,9 +932,26 @@ namespace ngcore
         {
           stream = std::make_shared<std::stringstream>
             (pybind11::cast<pybind11::bytes>(lst[pybind11::len(lst)-1]));
-          *this & version_map;
+          *this & version_needed;
+          logger->debug("versions needed for unpickling = {}", version_needed);
+          for(auto& libversion : version_needed)
+            if(libversion.second > GetLibraryVersion(libversion.first))
+              throw Exception("Error in unpickling data:\nLibrary " + libversion.first +
+                              " must be at least " + libversion.second.to_string());
           stream = std::make_shared<std::stringstream>
             (pybind11::cast<pybind11::bytes>(lst[pybind11::len(lst)-2]));
+          *this & version_map;
+          stream = std::make_shared<std::stringstream>
+            (pybind11::cast<pybind11::bytes>(lst[pybind11::len(lst)-3]));
+        }
+    }
+
+    void NeedsVersion(const std::string& library, const std::string& version) override
+    {
+      if(Output())
+        {
+          logger->debug("Need version {} of library {}.", version, library);
+          version_needed[library] = version_needed[library] > version ? version_needed[library] : version;
         }
     }
 
@@ -937,6 +970,12 @@ namespace ngcore
       lst.append(pybind11::bytes(std::static_pointer_cast<std::stringstream>(stream)->str()));
       stream = std::make_shared<std::stringstream>();
       *this & GetLibraryVersions();
+      FlushBuffer();
+      lst.append(pybind11::bytes(std::static_pointer_cast<std::stringstream>(stream)->str()));
+      stream = std::make_shared<std::stringstream>();
+      logger->debug("Writeout version needed = {}", version_needed);
+      *this & version_needed;
+      FlushBuffer();
       lst.append(pybind11::bytes(std::static_pointer_cast<std::stringstream>(stream)->str()));
       return lst;
     }
@@ -950,17 +989,17 @@ namespace ngcore
                         PyArchive<T_ARCHIVE_OUT> ar;
                         ar & self;
                         auto output = pybind11::make_tuple(ar.WriteOut());
-                        NETGEN_DEBUG_LOG(GetLogger("Archive"), "pickling output for object of type " +
-                                         Demangle(typeid(T).name()) + " = " +
-                                         std::string(pybind11::str(output)));
+                        GetLogger("Archive")->trace("Pickling output for object of type {} = {}",
+                                                    Demangle(typeid(T).name()),
+                                                    std::string(pybind11::str(output)));
                         return output;
                       },
                       [](pybind11::tuple state)
                       {
                         T* val = nullptr;
-                        NETGEN_DEBUG_LOG(GetLogger("Archive"), "State for unpickling of object of type " +
-                                         Demangle(typeid(T).name()) + " = " +
-                                         std::string(pybind11::str(state[0])));
+                        GetLogger("Archive")->trace("State for unpickling of object of type {} = {}",
+                                                    Demangle(typeid(T).name()),
+                                                    std::string(pybind11::str(state[0])));
                         PyArchive<T_ARCHIVE_IN> ar(state[0]);
                         ar & val;
                         return val;

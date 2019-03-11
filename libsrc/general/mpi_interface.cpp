@@ -43,8 +43,10 @@ namespace netgen
     return string(buf);
   }
 
+  // #else
+  // MPI_Comm MPI_COMM_WORLD, MPI_COMM_NULL;
 #endif
-
-
 }
+
+
 

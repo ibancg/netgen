@@ -923,6 +923,8 @@ double CalcTotalBad (const Mesh::T_POINTS & points,
 		     const Mesh::T_VOLELEMENTS & elements,
 		     const MeshingParameters & mp)
 {
+  static Timer t("CalcTotalBad"); RegionTimer reg(t);
+  
   double sum = 0;
   double elbad;
   
@@ -1353,6 +1355,8 @@ void Mesh :: ImproveMesh (const CSG eometry & geometry, OPTIMIZEGOAL goal)
   
 void Mesh :: ImproveMesh (const MeshingParameters & mp, OPTIMIZEGOAL goal)
 {
+  static Timer t("Mesh::ImproveMesh"); RegionTimer reg(t);
+  
   int typ = 1;
   
   (*testout) << "Improve Mesh" << "\n";

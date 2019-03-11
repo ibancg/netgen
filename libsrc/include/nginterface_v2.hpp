@@ -17,19 +17,27 @@
 enum NG_ELEMENT_TYPE { 
   NG_PNT = 0,
   NG_SEGM = 1, NG_SEGM3 = 2,
-  NG_TRIG = 10, NG_QUAD=11, NG_TRIG6 = 12, NG_QUAD6 = 13,
+  NG_TRIG = 10, NG_QUAD=11, NG_TRIG6 = 12, NG_QUAD6 = 13, NG_QUAD8 = 14,
   NG_TET = 20, NG_TET10 = 21, 
-  NG_PYRAMID = 22, NG_PRISM = 23, NG_PRISM12 = 24,
-  NG_HEX = 25
+  NG_PYRAMID = 22, NG_PRISM = 23, NG_PRISM12 = 24, NG_PRISM15 = 27, NG_PYRAMID13 = 28,
+  NG_HEX = 25, NG_HEX20 = 26
 };
 
 enum NG_REFINEMENT_TYPE { NG_REFINE_H = 0, NG_REFINE_P = 1, NG_REFINE_HP = 2 };
 #endif
 
+// #ifndef PARALLEL
+// typedef int MPI_Comm;
+// #endif
+
 
 namespace netgen
 {
-
+  using namespace std;
+  using namespace ngcore;
+  
+  // extern DLL_HEADER NgMPI_Comm ng_comm;
+  
   static constexpr int POINTINDEX_BASE = 1;
   
   struct T_EDGE2
@@ -253,17 +261,24 @@ namespace netgen
   public:
     // Ngx_Mesh () { ; }
     // Ngx_Mesh(class Mesh * amesh) : mesh(amesh) { ; }
-    Ngx_Mesh(shared_ptr<Mesh> amesh = NULL);
-    void LoadMesh (const string & filename);
 
-    void LoadMesh (istream & str);
+    /** reuse a netgen-mesh **/
+    Ngx_Mesh (shared_ptr<Mesh> amesh); 
+    /** load a new mesh **/
+    Ngx_Mesh (string filename, NgMPI_Comm acomm = NgMPI_Comm{});
+    
+    void LoadMesh (const string & filename, NgMPI_Comm comm = NgMPI_Comm{});
+
+    void LoadMesh (istream & str, NgMPI_Comm comm = NgMPI_Comm{});
     void SaveMesh (ostream & str) const;
     void UpdateTopology ();
     void DoArchive (Archive & archive);
 
+    NgMPI_Comm GetCommunicator() const;
+    
     virtual ~Ngx_Mesh();
 
-    bool Valid () { return mesh != NULL; }
+    bool Valid () const { return mesh != NULL; }
     
     int GetDimension() const;
     int GetNLevels() const;
@@ -330,6 +345,8 @@ namespace netgen
                  void (*taskmanager)(function<void(int,int)>) = &DummyTaskManager2,
                  void (*tracer)(string, bool) = &DummyTracer2);
 
+    int GetHPElementLevel (int ei, int dir) const;
+  
     void GetParentNodes (int ni, int * parents) const;
     int GetParentElement (int ei) const;
     int GetParentSElement (int ei) const;
@@ -346,9 +363,8 @@ namespace netgen
      int * const indices = NULL, int numind = 0) const;
     
 
-#ifdef PARALLEL
+    // for MPI-parallel
     std::tuple<int,int*> GetDistantProcs (int nodetype, int locnum) const;
-#endif
 
     shared_ptr<Mesh> GetMesh () const { return mesh; } 
     shared_ptr<Mesh> SelectMesh () const;

@@ -21,8 +21,8 @@ namespace netgen
     SEGMENT = 1, SEGMENT3 = 2,
     TRIG = 10, QUAD=11, TRIG6 = 12, QUAD6 = 13, QUAD8 = 14,
     TET = 20, TET10 = 21, 
-    PYRAMID = 22, PRISM = 23, PRISM12 = 24,
-    HEX = 25
+    PYRAMID = 22, PRISM = 23, PRISM12 = 24, PRISM15 = 27, PYRAMID13 = 28,
+    HEX = 25, HEX20 = 26
   };
 
   /*
@@ -45,7 +45,7 @@ namespace netgen
   };
   
 
-#define ELEMENT_MAXPOINTS 12
+#define ELEMENT_MAXPOINTS 20
 #define ELEMENT2D_MAXPOINTS 8
 
 
@@ -377,9 +377,9 @@ namespace netgen
     unsigned int orderx:6;
     unsigned int ordery:6;
 
-#ifdef PARALLEL
-    int partitionNumber; 
-#endif
+    // #ifdef PARALLEL
+    // int partitionNumber; 
+    // #endif
 
     /// a linked list for all segments in the same face
     SurfaceElementIndex next;
@@ -608,10 +608,12 @@ namespace netgen
     ///
     int hp_elnr;
 
+    /*
 #ifdef PARALLEL
     int GetPartition () const { return partitionNumber; }
     void SetPartition (int nr) { partitionNumber = nr; }; 
 #endif
+    */
   };
 
   ostream & operator<<(ostream  & s, const Element2d & el);
@@ -647,7 +649,7 @@ namespace netgen
     ///
     ELEMENT_TYPE typ;
     /// number of points (4..tet, 5..pyramid, 6..prism, 8..hex, 10..quad tet, 12..quad prism)
-    int np:5;
+    int np:6;
     ///
     class flagstruct { 
     public:
@@ -676,11 +678,11 @@ namespace netgen
     float badness;
     bool is_curved:1;   // element is (high order) curved
   
-#ifdef PARALLEL
+    // #ifdef PARALLEL
     /// number of partition for parallel computation 
-    int partitionNumber;
+    // int partitionNumber;
 
-#endif
+    // #endif
 
   public:
     flagstruct flags;
@@ -708,18 +710,21 @@ namespace netgen
     ///
     uint8_t GetNV() const
     {
-      __assume(typ >= TET && typ <= HEX);        
+      __assume(typ >= TET && typ <= PYRAMID13);
       switch (typ)
 	{
         case TET: 
         case TET10: 
           return 4;
-        case PRISM12: 
-        case PRISM: 
+        case PRISM12:
+        case PRISM15:
+        case PRISM:
 	  return 6; 
 	case PYRAMID:
+        case PYRAMID13:
 	  return 5;
 	case HEX:
+	case HEX20:
 	  return 8;
         default: // not a 3D element
 #ifdef DEBUG
@@ -794,10 +799,12 @@ namespace netgen
 	{
 	case TET: 
 	case TET10: return 4;
-	case PYRAMID: return 5;
-	case PRISM: 
+	case PYRAMID: case PYRAMID13: return 5;
+	case PRISM:
+        case PRISM15:
 	case PRISM12: return 5;
-        case HEX: return 6;
+        case HEX: case HEX20:
+          return 6;
 	default:
 #ifdef DEBUG
 	  PrintSysError ("element3d::GetNFaces not implemented for typ", typ)
@@ -897,14 +904,15 @@ namespace netgen
     bool IsCurved () const { return is_curved; }
     void SetCurved (bool acurved) { is_curved = acurved; }
 
-
+    /*
 #ifdef PARALLEL
     int GetPartition () const { return partitionNumber; }
     void SetPartition (int nr) { partitionNumber = nr; }; 
 #else
     int GetPartition () const { return 0; }
 #endif
-
+    */
+    
     int hp_elnr;
   };
 
@@ -962,10 +970,10 @@ namespace netgen
     ///
     int meshdocval;
 
-#ifdef PARALLEL
+    // #ifdef PARALLEL
     /// number of partition for parallel computation 
-    int partitionNumber;
-#endif
+    // int partitionNumber;
+    // #endif
 
   private:
     string* bcname;
@@ -1020,12 +1028,15 @@ namespace netgen
     bool IsCurved () const { return is_curved; }
     void SetCurved (bool acurved) { is_curved = acurved; }
 
+    /*
 #ifdef PARALLEL
     int GetPartition () const { return partitionNumber; }
     void SetPartition (int nr) { partitionNumber = nr; }; 
 #else
     int GetPartition () const { return 0; }
 #endif
+    */
+    
     void DoArchive (Archive & ar);
   };
 

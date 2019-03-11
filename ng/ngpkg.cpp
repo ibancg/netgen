@@ -1219,7 +1219,7 @@ namespace netgen
 
 #ifdef PARALLEL
     MyMPI_SendCmd ("bcastparthread");
-    MyMPI_Bcast (mparam.parthread);
+    MyMPI_Bcast (mparam.parthread, MPI_COMM_WORLD);
 #endif
 
     return TCL_OK;
@@ -2264,8 +2264,9 @@ namespace netgen
     mesh->ParallelMetis();
     cout << "done" << endl;
     ntasks = 1;
-    for (ElementIndex ei = 0; ei < mesh->GetNE(); ei++)
-      (*mesh)[ei].SetIndex ( (*mesh)[ei].GetPartition() );
+
+    // for (ElementIndex ei = 0; ei < mesh->GetNE(); ei++)
+    // (*mesh)[ei].SetIndex ( (*mesh)[ei].GetPartition() );
 
     return TCL_OK;
 

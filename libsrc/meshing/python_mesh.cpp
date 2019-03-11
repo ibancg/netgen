@@ -17,6 +17,22 @@ namespace netgen
 {
   extern bool netgen_executable_started;
   extern shared_ptr<NetgenGeometry> ng_geometry;
+#ifdef PARALLEL
+  /** we need allreduce in python-wrapped communicators **/
+  template <typename T>
+  inline T MyMPI_AllReduceNG (T d, const MPI_Op & op /* = MPI_SUM */, MPI_Comm comm)
+  {
+    T global_d;
+    MPI_Allreduce ( &d, &global_d, 1, MyGetMPIType<T>(), op, comm);
+    return global_d;
+  }
+#else
+  // enum { MPI_SUM = 0, MPI_MIN = 1, MPI_MAX = 2 };
+  // typedef int MPI_Op;
+  template <typename T>
+  inline T MyMPI_AllReduceNG (T d, const MPI_Op & op /* = MPI_SUM */, MPI_Comm comm)
+  { return d; }
+#endif
 }
 
 
@@ -70,6 +86,39 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
   m.def("_PushStatus", [](string s) { PushStatus(MyStr(s)); });
   m.def("_SetThreadPercentage", [](double percent) { SetThreadPercent(percent); });
 
+  py::class_<NgMPI_Comm> (m, "MPI_Comm")
+    .def_property_readonly ("rank", &NgMPI_Comm::Rank)
+    .def_property_readonly ("size", &NgMPI_Comm::Size)
+    .def("Barrier", &NgMPI_Comm::Barrier)
+    
+#ifdef PARALLEL
+    .def("WTime", [](NgMPI_Comm  & c) { return MPI_Wtime(); })
+#else
+    .def("WTime", [](NgMPI_Comm  & c) { return -1.0; })
+#endif
+    .def("Sum", [](NgMPI_Comm  & c, double x) { return MyMPI_AllReduceNG(x, MPI_SUM, c); })
+    .def("Min", [](NgMPI_Comm  & c, double x) { return MyMPI_AllReduceNG(x, MPI_MIN, c); })
+    .def("Max", [](NgMPI_Comm  & c, double x) { return MyMPI_AllReduceNG(x, MPI_MAX, c); })
+    .def("Sum", [](NgMPI_Comm  & c, int x) { return MyMPI_AllReduceNG(x, MPI_SUM, c); })
+    .def("Min", [](NgMPI_Comm  & c, int x) { return MyMPI_AllReduceNG(x, MPI_MIN, c); })
+    .def("Max", [](NgMPI_Comm  & c, int x) { return MyMPI_AllReduceNG(x, MPI_MAX, c); })
+    .def("Sum", [](NgMPI_Comm  & c, size_t x) { return MyMPI_AllReduceNG(x, MPI_SUM, c); })
+    .def("Min", [](NgMPI_Comm  & c, size_t x) { return MyMPI_AllReduceNG(x, MPI_MIN, c); })
+    .def("Max", [](NgMPI_Comm  & c, size_t x) { return MyMPI_AllReduceNG(x, MPI_MAX, c); })
+    .def("SubComm", [](NgMPI_Comm & c, std::vector<int> proc_list) {
+        Array<int> procs(proc_list.size());
+        for (int i = 0; i < procs.Size(); i++)
+          procs[i] = proc_list[i];
+        if (!procs.Contains(c.Rank()))
+          throw Exception("rank "+ToString(c.Rank())+" not in subcomm");
+	MPI_Comm subcomm = MyMPI_SubCommunicator(c, procs);
+	return NgMPI_Comm(subcomm, true);
+      }, py::arg("procs"));
+  ;
+
+
+
+  
   py::class_<NGDummyArgument>(m, "NGDummyArgument")
     .def("__bool__", []( NGDummyArgument &self ) { return false; } )
     ;
@@ -80,6 +129,7 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
     .def(py::self-py::self)
     .def(py::self+Vec<2>())
     .def(py::self-Vec<2>())
+    .def("__getitem__", [](Point<2>& self, int index) { return self[index]; })
     ;
 
   py::class_<Point<3>> (m, "Point3d")
@@ -88,6 +138,7 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
     .def(py::self-py::self)
     .def(py::self+Vec<3>())
     .def(py::self-Vec<3>())
+    .def("__getitem__", [](Point<2>& self, int index) { return self[index]; })
     ;
 
   m.def ("Pnt", FunctionPointer
@@ -111,6 +162,8 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
     .def(-py::self)
     .def(double()*py::self)
     .def("Norm", &Vec<2>::Length)
+    .def("__getitem__", [](Vec<2>& vec, int index) { return vec[index]; })
+    .def("__len__", [](Vec<2>& /*unused*/) { return 2; })
     ;
 
   py::class_<Vec<3>> (m, "Vec3d")
@@ -121,6 +174,8 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
     .def(-py::self)
     .def(double()*py::self)
     .def("Norm", &Vec<3>::Length)
+    .def("__getitem__", [](Vec<3>& vec, int index) { return vec[index]; })
+    .def("__len__", [](Vec<3>& /*unused*/) { return 3; })
     ;
 
   m.def ("Vec", FunctionPointer
@@ -230,41 +285,31 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
 	  self(index) = val;
 	}))
     ;
-  
+
   py::class_<Element>(m, "Element3D")
-    .def(py::init([](int index, py::list vertices)
+    .def(py::init([](int index, std::vector<PointIndex> vertices)
                   {
-                    Element * newel = nullptr;
-                    if (py::len(vertices) == 4)
+                    int np = vertices.size();
+                    ELEMENT_TYPE et;
+                    switch (np)
                       {
-                        newel = new Element(TET);
-                        for (int i = 0; i < 4; i++)
-                          (*newel)[i] = py::extract<PointIndex>(vertices[i])();
-                        newel->SetIndex(index);
+                      case 4: et = TET; break;
+                      case 5: et = PYRAMID; break;
+                      case 6: et = PRISM; break;
+                      case 8: et = HEX; break;
+                      case 10: et = TET10; break;
+                      case 13: et = PYRAMID13; break;
+                      case 15: et = PRISM15; break;
+                      case 20: et = HEX20; break;
+                      default:
+                        throw Exception ("no Element3D with " + ToString(np) +
+                                         " points");
                       }
-                    else if (py::len(vertices) == 5)
-                      {
-                        newel = new Element(PYRAMID);
-                        for (int i = 0; i < 5; i++)
-                          (*newel)[i] = py::extract<PointIndex>(vertices[i])();
-                        newel->SetIndex(index);
-                      }
-                    else if (py::len(vertices) == 6)
-                      {
-                        newel = new Element(PRISM);
-                        for (int i = 0; i < 6; i++)
-                          (*newel)[i] = py::extract<PointIndex>(vertices[i])();
-                        newel->SetIndex(index);
-                      }
-                    else if (py::len(vertices) == 8)
-                      {
-                        newel = new Element(HEX);
-                        for (int i = 0; i < 8; i++)
-                          (*newel)[i] = py::extract<PointIndex>(vertices[i])();
-                        newel->SetIndex(index);
-                      }
-                    else
-                      throw NgException ("cannot create element");
+
+                    auto newel = new Element(et);
+                    for(int i=0; i<np; i++)
+                      (*newel)[i] = vertices[i];
+                    newel->SetIndex(index);
                     return newel;
                   }),
           py::arg("index")=1,py::arg("vertices"),
@@ -313,6 +358,13 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
                        {
                          newel = new Element2d(TRIG6);
                          for(int i = 0; i<6; i++)
+                           (*newel)[i] = py::extract<PointIndex>(vertices[i])();
+                         newel->SetIndex(index);
+                       }
+                     else if (py::len(vertices) == 8)
+                       {
+                         newel = new Element2d(QUAD8);
+                         for(int i = 0; i<8; i++)
                            (*newel)[i] = py::extract<PointIndex>(vertices[i])();
                          newel->SetIndex(index);
                        }
@@ -483,18 +535,21 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
   py::class_<Mesh,shared_ptr<Mesh>>(m, "Mesh")
     // .def(py::init<>("create empty mesh"))
 
-    .def(py::init( [] (int dim)
+    .def(py::init( [] (int dim, NgMPI_Comm comm)
                    {
                      auto mesh = make_shared<Mesh>();
+		     mesh->SetCommunicator(comm);
                      mesh -> SetDimension(dim);
                      SetGlobalMesh(mesh);  // for visualization
                      mesh -> SetGeometry (nullptr);
                      return mesh;
                    } ),
-         py::arg("dim")=3         
+         py::arg("dim")=3, py::arg("comm")=NgMPI_Comm{}
          )
     .def(NGSPickle<Mesh>())
-
+    .def_property_readonly("comm", [](const Mesh & amesh) -> NgMPI_Comm
+			   { return amesh.GetCommunicator(); },
+                           "MPI-communicator the Mesh lives in")
     /*
     .def("__init__",
          [](Mesh *instance, int dim)
@@ -507,66 +562,155 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
     */
     
     .def_property_readonly("_timestamp", &Mesh::GetTimeStamp)
+    .def("Distribute", [](shared_ptr<Mesh> self, NgMPI_Comm comm) {
+	self->SetCommunicator(comm);
+	if(comm.Size()==1) return self;
+	// if(MyMPI_GetNTasks(comm)==2) throw NgException("Sorry, cannot handle communicators with NP=2!");
+	// cout << " rank " << MyMPI_GetId(comm) << " of " << MyMPI_GetNTasks(comm) << " called Distribute " << endl;
+	if(comm.Rank()==0) self->Distribute();
+	else self->SendRecvMesh();
+	return self;
+      }, py::arg("comm"))
+    .def("Receive", [](NgMPI_Comm comm) {
+        auto mesh = make_shared<Mesh>();
+        mesh->SetCommunicator(comm);
+        mesh->SendRecvMesh();
+        return mesh;
+      })
     .def("Load",  FunctionPointer 
-	 ([](Mesh & self, const string & filename)
+	 ([](shared_ptr<Mesh> self, const string & filename)
 	  {
-	    istream * infile;
 
-#ifdef PARALLEL
-	    MPI_Comm_rank(MPI_COMM_WORLD, &id);
-	    MPI_Comm_size(MPI_COMM_WORLD, &ntasks);
-	    
-	    char* buf = nullptr;
-	    int strs = 0;
-	    if(id==0) {
-#endif
-            if (filename.find(".vol.gz") != string::npos)
-              infile = new igzstream (filename.c_str());
-            else
-              infile = new ifstream (filename.c_str());
-	    // ifstream input(filename);
-#ifdef PARALLEL
-	    //still inside id==0-bracket...
-	        self.Load(*infile);	      
-		self.Distribute();
+	    auto comm = self->GetCommunicator();
+	    int id = comm.Rank();
+	    int ntasks = comm.Size();
+	    auto & mesh = self;
 
-		/** Copy the rest of the file into a string (for geometry) **/
-		stringstream geom_part;
-		geom_part << infile->rdbuf();
-		string geom_part_string = geom_part.str();
-		strs = geom_part_string.size();
-		buf = new char[strs];
-		memcpy(buf, geom_part_string.c_str(), strs*sizeof(char));
-	      }
-	    else {
-	      self.SendRecvMesh();
+	    {
+	      ifstream infile(filename.c_str());
+	      if(!infile.good())
+		throw NgException(string("Error opening file ") + filename);
 	    }
 
-	    /** Scatter the geometry-string **/
-	    MPI_Bcast(&strs, 1, MPI_INT, 0, MPI_COMM_WORLD); 
-	    if(id!=0)
-	      buf = new char[strs];
-	    MPI_Bcast(buf, strs, MPI_CHAR, 0, MPI_COMM_WORLD);
-	    if(id==0)
-	      delete infile;
-	    infile = new istringstream(string((const char*)buf, (size_t)strs));
-	    delete[] buf;
-	    
-#else
-	    self.Load(*infile);
-#endif
-	    for (int i = 0; i < geometryregister.Size(); i++)
+	    if ( filename.find(".vol") == string::npos )
 	      {
-		NetgenGeometry * hgeom = geometryregister[i]->LoadFromMeshFile (*infile);
-		if (hgeom)
-		  {
-		    ng_geometry.reset (hgeom);
-                    self.SetGeometry(ng_geometry);
-		    break;
-		  }
+		if(ntasks>1)
+		  throw NgException("Not sure what to do with this?? Does this work with MPI??");
+		mesh->SetCommunicator(comm);
+		ReadFile(*mesh,filename.c_str());
+		//mesh->SetGlobalH (mparam.maxh);
+		//mesh->CalcLocalH();
+		return;
 	      }
-	    self.SetGeometry(ng_geometry);
-	    delete infile;
+
+	    istream * infile;
+	    Array<char> buf; // for distributing geometry!
+	    int strs;
+
+	    if( id == 0) {
+
+	      if (filename.substr (filename.length()-3, 3) == ".gz")
+		infile = new igzstream (filename.c_str());
+	      else
+		infile = new ifstream (filename.c_str());
+	      mesh -> Load(*infile);
+
+	      // make string from rest of file (for geometry info!)
+	      // (this might be empty, in which case we take the global ng_geometry)
+	      stringstream geom_part;
+	      geom_part << infile->rdbuf();
+	      string geom_part_string = geom_part.str();
+	      strs = geom_part_string.size();
+	      // buf = new char[strs];
+	      buf.SetSize(strs);
+	      memcpy(&buf[0], geom_part_string.c_str(), strs*sizeof(char));
+
+	      delete infile;
+
+	      if (ntasks > 1)
+		{
+
+		  char * weightsfilename = new char [filename.size()+1];
+		  strcpy (weightsfilename, filename.c_str());            
+		  weightsfilename[strlen (weightsfilename)-3] = 'w';
+		  weightsfilename[strlen (weightsfilename)-2] = 'e';
+		  weightsfilename[strlen (weightsfilename)-1] = 'i';
+
+		  ifstream weightsfile(weightsfilename);      
+		  delete [] weightsfilename;  
+	  
+		  if (!(weightsfile.good()))
+		    {
+		      // cout << "regular distribute" << endl;
+		      mesh -> Distribute();
+		    }
+		  else
+		    {
+		      char str[20];   
+		      bool endfile = false;
+		      int n, dummy;
+	      
+		      Array<int> segment_weights;
+		      Array<int> surface_weights;
+		      Array<int> volume_weights;
+	      
+		      while (weightsfile.good() && !endfile)
+			{
+			  weightsfile >> str;
+		  
+			  if (strcmp (str, "edgeweights") == 0)
+			    {
+			      weightsfile >> n;
+			      segment_weights.SetSize(n);
+			      for (int i = 0; i < n; i++)
+				weightsfile >> dummy >> segment_weights[i];
+			    }
+		  
+			  if (strcmp (str, "surfaceweights") == 0)
+			    {
+			      weightsfile >> n;
+			      surface_weights.SetSize(n);
+			      for (int i=0; i<n; i++)
+				weightsfile >> dummy >> surface_weights[i];
+			    }
+		  
+			  if (strcmp (str, "volumeweights") == 0)
+			    {
+			      weightsfile >> n;
+			      volume_weights.SetSize(n);
+			      for (int i=0; i<n; i++)
+				weightsfile >> dummy >> volume_weights[i];
+			    }
+		  
+			  if (strcmp (str, "endfile") == 0)
+			    endfile = true;  
+			}     
+	      
+		      mesh -> Distribute(volume_weights, surface_weights, segment_weights);
+		    }
+		} // ntasks>1 end
+	    } // id==0 end
+	    else {
+	      mesh->SendRecvMesh();
+	    }
+
+	    if(ntasks>1) {
+#ifdef PARALLEL
+	      /** Scatter the geometry-string (no dummy-implementation in mpi_interface) **/
+	      int strs = buf.Size();
+	      MyMPI_Bcast(strs, comm);
+	      if(strs>0)
+		MyMPI_Bcast(buf, comm);
+#endif
+	    }
+
+	    shared_ptr<NetgenGeometry> geo;
+	    if(buf.Size()) { // if we had geom-info in the file, take it
+	      istringstream geom_infile(string((const char*)&buf[0], buf.Size()));
+	      geo = geometryregister.LoadFromMeshFile(geom_infile);
+	    }
+	    if(geo!=nullptr) mesh->SetGeometry(geo);
+	    else if(ng_geometry!=nullptr) mesh->SetGeometry(ng_geometry);
 	  }),py::call_guard<py::gil_scoped_release>())
     // static_cast<void(Mesh::*)(const string & name)>(&Mesh::Load))
     .def("Save", static_cast<void(Mesh::*)(const string & name)const>(&Mesh::Save),py::call_guard<py::gil_scoped_release>())
@@ -835,8 +979,21 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
 				   }))
                                             
     ;
-  
 
+  m.def("ImportMesh", [](const string& filename)
+                      {
+                        auto mesh = make_shared<Mesh>();
+                        ReadFile(*mesh, filename);
+                        return mesh;
+                      }, py::arg("filename"),
+    R"delimiter(Import mesh from other file format, supported file formats are:
+ Neutral format (*.mesh, *.emt)
+ Surface file (*.surf)
+ Universal format (*.unv)
+ Olaf format (*.emt)
+ Tet format (*.tet)
+ Pro/ENGINEER format (*.fnf)
+)delimiter");
   py::enum_<MESHING_STEP>(m,"MeshingStep")
     .value("MESHEDGES",MESHCONST_MESHEDGES)
     .value("MESHSURFACE",MESHCONST_OPTSURFACE)
@@ -901,6 +1058,8 @@ DLL_HEADER void ExportNetgenMeshing(py::module &m)
                                                      printmessage_importance = importance;
                                                      return old;
                                                    }));
+
+
 }
 
 PYBIND11_MODULE(libmesh, m) {

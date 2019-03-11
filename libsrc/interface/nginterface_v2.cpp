@@ -31,38 +31,38 @@ namespace netgen
     return hmesh;
   }
   
-
-  Ngx_Mesh :: Ngx_Mesh (shared_ptr<Mesh> amesh) 
-  {
-    if (amesh)
-      mesh = amesh;
-    else
-      mesh = netgen::mesh;
-  }
+  Ngx_Mesh :: Ngx_Mesh (shared_ptr<Mesh> amesh)
+  { mesh = amesh ? amesh : netgen::mesh; }
+  Ngx_Mesh :: Ngx_Mesh (string filename, NgMPI_Comm acomm)
+  { LoadMesh(filename, acomm); }
   
-  Ngx_Mesh * LoadMesh (const string & filename)
+  Ngx_Mesh * LoadMesh (const string & filename, NgMPI_Comm comm)
   {
     netgen::mesh.reset();
-    Ng_LoadMesh (filename.c_str());
+    Ng_LoadMesh (filename.c_str(), comm);
     return new Ngx_Mesh (netgen::mesh);
   }
 
-  void Ngx_Mesh :: LoadMesh (const string & filename)
+  void Ngx_Mesh :: LoadMesh (const string & filename, NgMPI_Comm comm)
   {
     netgen::mesh.reset();
-    Ng_LoadMesh (filename.c_str());
+    Ng_LoadMesh (filename.c_str(), comm);
     // mesh = move(netgen::mesh);
     mesh = netgen::mesh;
   }
 
-  void Ngx_Mesh :: LoadMesh (istream & ist)
+  void Ngx_Mesh :: LoadMesh (istream & ist, NgMPI_Comm comm)
   {
     netgen::mesh = make_shared<Mesh>();
+    netgen::mesh->SetCommunicator(comm);
     netgen::mesh -> Load (ist);
     // mesh = move(netgen::mesh);
     mesh = netgen::mesh;
     SetGlobalMesh (mesh);
   }
+
+  NgMPI_Comm Ngx_Mesh :: GetCommunicator() const
+  { return Valid() ? mesh->GetCommunicator() : NgMPI_Comm(MPI_COMM_NULL); }
 
   void Ngx_Mesh :: SaveMesh (ostream & ost) const
   {
@@ -71,7 +71,12 @@ namespace netgen
 
   void Ngx_Mesh :: DoArchive (Archive & archive)
   {
-    if (archive.Input()) mesh = make_shared<Mesh>();
+#ifdef PARALLEL
+    if (archive.Input()) {
+      mesh = make_shared<Mesh>();
+      mesh->SetCommunicator(GetCommunicator());
+    }
+#endif
     mesh->DoArchive(archive);
     if (archive.Input())
       {
@@ -675,6 +680,37 @@ namespace netgen
   }
 
 
+  int Ngx_Mesh :: GetHPElementLevel (int ei, int dir) const
+  {
+    ei++;
+    int level = -1;
+    
+    if (mesh->hpelements)
+      {
+	int hpelnr = -1;
+	if (mesh->GetDimension() == 2)
+	  hpelnr = mesh->SurfaceElement(ei).hp_elnr;
+	else
+	  hpelnr = mesh->VolumeElement(ei).hp_elnr;
+
+        if (hpelnr < 0)
+          throw NgException("Ngx_Mesh::GetHPElementLevel: Wrong hp-element number!");
+        
+        if (dir == 1)
+          level = (*mesh->hpelements)[hpelnr].levelx;
+        else if (dir == 2)
+          level = (*mesh->hpelements)[hpelnr].levely;
+        else if (dir == 3)
+          level = (*mesh->hpelements)[hpelnr].levelz;
+        else
+          throw NgException("Ngx_Mesh::GetHPElementLevel: dir has to be 1, 2 or 3!");
+      }
+    //else
+    //  throw NgException("Ngx_Mesh::GetHPElementLevel only for HPRefinement implemented!");
+
+    return level;	  
+  }
+  
   int Ngx_Mesh :: GetParentElement (int ei) const
   {
       ei++;
@@ -971,22 +1007,59 @@ namespace netgen
    int * const indices, int numind) const
 
   {
-    if (mesh->GetDimension() != 1)
-      throw NgException("FindElementOfPoint<1> called for multidim mesh");
-
-    Point<3> p(hp[0], 0,0);
-    for (SegmentIndex si = 0; si < mesh->GetNSeg(); si++)
+    switch (mesh->GetDimension())
       {
-        auto & seg = (*mesh)[si];
-        Point<3> p1 = (*mesh)[seg[0]];
-        Point<3> p2 = (*mesh)[seg[1]];
-        double lam = (p(0)-p1(0)) / (p2(0)-p1(0));
-        if (lam >= -1e-10 && lam <= 1+1e-10)
-          {
-            lami[0] = 1-lam;
-            return si;
-          }
+      case 1:
+        {
+          Point<3> p(hp[0], 0,0);
+          for (SegmentIndex si = 0; si < mesh->GetNSeg(); si++)
+            {
+              auto & seg = (*mesh)[si];
+              Point<3> p1 = (*mesh)[seg[0]];
+              Point<3> p2 = (*mesh)[seg[1]];
+              double lam = (p(0)-p1(0)) / (p2(0)-p1(0));
+              if (lam >= -1e-10 && lam <= 1+1e-10)
+                {
+                  lami[0] = 1-lam;
+                  return si;
+                }
+            }
+        }
+        break;
+      case 2:
+        {
+          Point<3> p(hp[0], hp[1],0);
+          for (SegmentIndex si = 0; si < mesh->GetNSeg(); si++)
+            {
+              auto & seg = (*mesh)[si];
+              Point<3> p1 = (*mesh)[seg[0]];
+              Point<3> p2 = (*mesh)[seg[1]];
+              double lam;
+              double r;
+              if (fabs(p2[0]-p1[0]) >= fabs(p2[1]-p1[1]))
+                {
+                  lam = (p[0]-p1[0])/(p2[0]-p1[0]);
+                  r = p[1] - p1[1] - lam*(p2[1]-p1[1]);
+                }
+              else
+                {
+                  lam = (p[1]-p1[1])/(p2[1]-p1[1]);
+                  r = p[0] - p1[0] - lam*(p2[0]-p1[0]);
+                }
+              if ( lam >= -1e-10 && lam <= 1+1e-10 && fabs(r) <= 1e-10 )
+                {
+                  lami[0] = 1-lam;
+                  return si;
+                }
+            }
+        }
+        break;
+      case 3:
+      default:
+        throw Exception("FindElementOfPoint<1> only implemented for mesh-dimension 1 and 2!");
+        break;
       }
+ 
     return -1;
   }
 
@@ -1055,13 +1128,13 @@ namespace netgen
 
 
   template <>
-  void Ngx_Mesh :: SetRefinementFlag<2> (size_t elnr, bool flag)
+  DLL_HEADER void Ngx_Mesh :: SetRefinementFlag<2> (size_t elnr, bool flag)
   {
     mesh->SurfaceElement(elnr+1).SetRefinementFlag(flag);
   }
 
   template <>
-  void Ngx_Mesh :: SetRefinementFlag<3> (size_t elnr, bool flag)
+  DLL_HEADER void Ngx_Mesh :: SetRefinementFlag<3> (size_t elnr, bool flag)
   {
     mesh->VolumeElement(elnr+1).SetRefinementFlag(flag);    
   }
@@ -1209,11 +1282,11 @@ void Ngx_Mesh::SetSurfaceElementOrders (int enr, int ox, int oy)
 
   
 
-#ifdef PARALLEL
+
   
   std::tuple<int,int*>  Ngx_Mesh :: GetDistantProcs (int nodetype, int locnum) const
   {
-    
+#ifdef PARALLEL
     switch (nodetype)
       {
       case 0:
@@ -1234,10 +1307,10 @@ void Ngx_Mesh::SetSurfaceElementOrders (int enr, int ox, int oy)
       default:
 	return std::tuple<int,int*>(0,nullptr);
       }
-  }
-
+#else
+    return std::tuple<int,int*>(0,nullptr);
 #endif
-
+  }
 }
 
 

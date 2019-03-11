@@ -117,14 +117,10 @@ void Ng_LoadMeshFromStream ( istream & input )
 }
 
 
-
-
-void Ng_LoadMesh (const char * filename)
+void Ng_LoadMesh (const char * filename, ngcore::NgMPI_Comm comm)
 {
-#ifdef PARALLEL
-  MPI_Comm_size(MPI_COMM_WORLD, &ntasks);
-  MPI_Comm_rank(MPI_COMM_WORLD, &id);
-#endif
+  int id = comm.Rank();
+  int ntasks = comm.Size();
 
   {
     ifstream infile(filename);
@@ -134,11 +130,10 @@ void Ng_LoadMesh (const char * filename)
 
   if ( string(filename).find(".vol") == string::npos )
     {
-#ifdef PARALLEL
       if(ntasks>1)
 	throw NgException("Not sure what to do with this?? Does this work with MPI??");
-#endif
       mesh.reset (new Mesh());
+      mesh->SetCommunicator(comm);
       ReadFile(*mesh,filename);
       //mesh->SetGlobalH (mparam.maxh);
       //mesh->CalcLocalH();
@@ -146,12 +141,10 @@ void Ng_LoadMesh (const char * filename)
     }
 
   istream * infile;
-  char* buf; // for distributing geometry!
+  Array<char> buf; // for distributing geometry!
   int strs;
 
-  #ifdef PARALLEL
   if( id == 0) {
-  #endif
 
     string fn(filename);
     if (fn.substr (fn.length()-3, 3) == ".gz")
@@ -159,21 +152,22 @@ void Ng_LoadMesh (const char * filename)
     else
       infile = new ifstream (filename);
     mesh.reset (new Mesh());
+    mesh->SetCommunicator(comm);
     mesh -> Load(*infile);
     SetGlobalMesh (mesh);
 
     // make string from rest of file (for geometry info!)
-    if(!ng_geometry) {
-      stringstream geom_part;
-      geom_part << infile->rdbuf();
-      string geom_part_string = geom_part.str();
-      strs = geom_part_string.size();
-      buf = new char[strs];
-      memcpy(buf, geom_part_string.c_str(), strs*sizeof(char));
-    }
+    // (this might be empty, in which case we take the global ng_geometry)
+    stringstream geom_part;
+    geom_part << infile->rdbuf();
+    string geom_part_string = geom_part.str();
+    strs = geom_part_string.size();
+    // buf = new char[strs];
+    buf.SetSize(strs);
+    memcpy(&buf[0], geom_part_string.c_str(), strs*sizeof(char));
+
     delete infile;
 
-#ifdef PARALLEL
     if (ntasks > 1)
       {
 
@@ -239,37 +233,31 @@ void Ng_LoadMesh (const char * filename)
   } // id==0 end
   else {
     mesh.reset (new Mesh());
+    mesh->SetCommunicator(comm);
     SetGlobalMesh (mesh);
     mesh->SendRecvMesh();
   }
 
-  if(!ng_geometry && ntasks>1) {
-    /** Scatter the geometry-string **/
-    MPI_Bcast(&strs, 1, MPI_INT, 0, MPI_COMM_WORLD); 
-    if(id!=0) buf = new char[strs];
-    MPI_Bcast(buf, strs, MPI_CHAR, 0, MPI_COMM_WORLD);
-  }
+  if(ntasks>1) {
+#ifdef PARALLEL
+    /** Scatter the geometry-string (no dummy-implementation in mpi_interface) **/
+    int strs = buf.Size();
+    MyMPI_Bcast(strs, comm);
+    if(strs>0)
+      MyMPI_Bcast(buf, comm);
 #endif
-
-  if(!ng_geometry) {
-    infile = new istringstream(string((const char*)buf, (size_t)strs));
-    delete[] buf;
-    for (int i = 0; i < geometryregister.Size(); i++)
-      {
-	NetgenGeometry * hgeom = geometryregister[i]->LoadFromMeshFile (*infile);
-	if (hgeom)
-	  {
-	    ng_geometry.reset (hgeom);
-	    mesh->SetGeometry(ng_geometry);
-	    break;
-	  }
-      }
   }
-  /** Dummy Geometry if we still could not find any geometry info! **/
-  // if (!ng_geometry)
-  //   ng_geometry = make_shared<NetgenGeometry>();
-  if(ng_geometry)
-    mesh->SetGeometry(ng_geometry);
+
+  shared_ptr<NetgenGeometry> geo;
+  if(buf.Size()) { // if we had geom-info in the file, take it
+    istringstream geom_infile(string((const char*)&buf[0], buf.Size()));
+    geo = geometryregister.LoadFromMeshFile(geom_infile);
+  }
+  if(geo!=nullptr) {
+    ng_geometry = geo;
+    mesh->SetGeometry(geo);
+  }
+  else if(ng_geometry!=nullptr) mesh->SetGeometry(ng_geometry);
 }
 
 void Ng_LoadMeshFromString (const char * mesh_as_string)
@@ -2075,7 +2063,7 @@ void Ng_SocketClientGetServerClientID ( const int number, int * id )
 
 
 
-
+/*
 #ifdef PARALLEL
 void Ng_SetElementPartition ( const int elnr, const int part )
 {
@@ -2087,6 +2075,7 @@ int Ng_GetElementPartition ( const int elnr )
   return mesh->VolumeElement(elnr+1).GetPartition();
 }
 #endif
+*/
 
 
 void Ng_InitPointCurve(double red, double green, double blue)
